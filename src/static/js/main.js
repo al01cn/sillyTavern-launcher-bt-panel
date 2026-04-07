@@ -1,33 +1,23 @@
 /**
- * 插件前端交互脚本
- *
- * 插件信息通过 __BT_PLUGIN__ 获取（来自 package.js，已冻结不可篡改）
+ * SillyTavern Launcher 宝塔插件 - 主入口
+ * 负责路由切换和工具函数，页面逻辑在各 pages 目录
  */
 
 var BTPlugin = (function () {
     "use strict";
 
     var plugin = __BT_PLUGIN__ || {};
+    var currentPage = 'home';
 
     // ======== 宝塔面板初始化 ========
 
     // 定义窗口尺寸
     $('.layui-layer-page').css({ 'width': '900px' });
 
-    // 左侧菜单切换效果
-    $(".bt-w-menu p").click(function () {
-        $(this).addClass('bgw').siblings().removeClass('bgw');
-    });
-
     // ======== 请求封装 ========
 
     /**
      * 发送请求到插件（宝塔标准方式）
-     *
-     * @param {string} func       - 后端方法名（对应 _main.py 中的方法）
-     * @param {object} args       - 传到插件方法中的参数
-     * @param {function} callback - 处理函数，响应内容传入第一个参数
-     * @param {number} timeout    - 超时时间（毫秒），默认 1 小时
      */
     function request_plugin(func, args, callback, timeout) {
         if (!timeout) timeout = 3600 * 1000;
@@ -42,47 +32,164 @@ var BTPlugin = (function () {
                     return;
                 }
                 return callback(rdata);
+            },
+            error: function (xhr, status, error) {
+                console.error('Request failed:', status, error);
+                if (callback) {
+                    callback({ status: false, msg: '请求失败: ' + error });
+                }
             }
         });
     }
 
-    // ======== 页面内容 ========
+    // ======== 页面切换 ========
 
     /**
-     * 构建概览页
+     * 显示指定页面
      */
-    function show_index() {
-        var html = '<div class="bt-plugin-demo">'
-            + '<div class="logos">'
-            + '<img id="bt-plugin-icon" src="https://ghfast.top/https://raw.githubusercontent.com/al01cn/sillyTavern-launcher/GUI/public/logo.png" alt="Plugin-Icon">'
-            + '<span class="plus">+</span>'
-            + '<img src="https://www.bt.cn/static/astro/icon/logo.svg" alt="BT-Logo">'
-            + '</div>'
-            + '<h2>' + (plugin.title || 'Plugin') + '</h2>'
-            + '<span class="version">v' + (plugin.version || '1.0') + '</span>'
-            + '<button class="btn" onclick="BTPlugin.hello()">Hello World</button>'
-            + '</div>';
-        $('.plugin_body').html(html);
+    function showPage(page) {
+        currentPage = page;
+        
+        // 更新菜单选中状态
+        $(".stl-nav-item").removeClass('active');
+        var menuMap = { 
+            'home': 0, 'tavern': 1, 'versions': 2, 
+            'extensions': 3, 'resources': 4, 
+            'console': 5, 'settings': 6 
+        };
+        $(".stl-nav-item").eq(menuMap[page] || 0).addClass('active');
+        
+        // 调用对应页面的渲染函数
+        var fnName = 'render' + page.charAt(0).toUpperCase() + page.slice(1) + 'Page';
+        var renderFn = window[fnName];
+        if (typeof renderFn === 'function') {
+            renderFn();
+        } else {
+            renderHomePage();
+        }
     }
 
+    // ======== 通用操作 ========
+
     /**
-     * Hello World demo - 请求后端 ping 接口
+     * 切换版本
      */
-    function hello() {
-        request_plugin('ping', {}, function (rdata) {
-            layer.msg(rdata.msg || 'Hello World!', { icon: 1 });
+    function switchVersion(path) {
+        request_plugin('switch_version', { path: path }, function (rdata) {
+            if (rdata.status) {
+                layer.msg('版本切换成功', { icon: 1 });
+                showPage('versions');
+            } else {
+                layer.msg(rdata.msg || '切换失败', { icon: 2 });
+            }
         });
     }
 
-    // ======== 初始化 ========
+    /**
+     * 删除版本
+     */
+    function removeVersion(path) {
+        layer.confirm('确定要删除这个版本吗？', function (index) {
+            request_plugin('remove_version', { path: path }, function (rdata) {
+                if (rdata.status) {
+                    layer.msg('删除成功', { icon: 1 });
+                    showPage('versions');
+                } else {
+                    layer.msg(rdata.msg || '删除失败', { icon: 2 });
+                }
+            });
+            layer.close(index);
+        });
+    }
 
-    // 第一次打开窗口时调用
-    show_index();
+    /**
+     * 下载版本
+     */
+    function downloadVersion(version) {
+        layer.msg('正在下载 ' + version + '...', { icon: 16, time: 0 });
+        request_plugin('download_version', { version: version }, function (rdata) {
+            layer.closeAll();
+            if (rdata.status) {
+                layer.msg('下载完成', { icon: 1 });
+                showPage('versions');
+            } else {
+                layer.msg(rdata.msg || '下载失败', { icon: 2 });
+            }
+        });
+    }
 
-    // 公开接口
-    return {
-        show_index: show_index,
-        request: request_plugin,
-        hello: hello,
+/**
+ * 切换访问模式
+ */
+function switchMode(mode) {
+    $('.stl-mode-btn').removeClass('active');
+    $('.stl-mode-btn[data-mode="' + mode + '"]').addClass('active');
+    
+    // 保存选择到 localStorage
+    localStorage.setItem('stl_access_mode', mode);
+    
+    layer.msg('已切换至 ' + (mode === 'lan' ? '局域网' : '公网') + '模式', { icon: 1 });
+}
+
+// ======== 公开接口 ========
+
+return {
+    // 页面切换
+    showPage: showPage,
+    
+    // 通用操作
+    switchVersion: switchVersion,
+    removeVersion: removeVersion,
+    downloadVersion: downloadVersion,
+    switchMode: switchMode,
+    
+    // 页面函数（从全局作用域获取）
+    startService: window.startService,
+    stopService: window.stopService,
+    openServer: window.openServer,
+    saveSettings: window.saveSettings,
+    checkNode: window.checkNode,
+    checkGit: window.checkGit,
+        
+        // 兼容旧接口
+        show_index: renderHomePage,
+        get_logs: renderConsolePage,
+        hello: function() {
+            request_plugin('ping', {}, function (rdata) {
+                layer.msg(rdata.msg || 'Hello World!', { icon: 1 });
+            });
+        }
     };
 })();
+
+// 将 request_plugin 暴露到全局作用域，供页面 JS 调用
+(function() {
+    var plugin = __BT_PLUGIN__ || {};
+    window.request_plugin = function(func, args, callback, timeout) {
+        if (!timeout) timeout = 3600 * 1000;
+        $.ajax({
+            type: 'POST',
+            url: '/plugin?action=a&s=' + func + '&name=' + plugin.name,
+            data: args,
+            timeout: timeout,
+            success: function (rdata) {
+                if (!callback) {
+                    layer.msg(rdata.msg, { icon: rdata.status ? 1 : 2 });
+                    return;
+                }
+                return callback(rdata);
+            },
+            error: function (xhr, status, error) {
+                console.error('Request failed:', status, error);
+                if (callback) {
+                    callback({ status: false, msg: '请求失败: ' + error });
+                }
+            }
+        });
+    };
+})();
+
+// 页面加载完成后初始化
+$(document).ready(function() {
+    BTPlugin.showPage('home');
+});

@@ -1,0 +1,807 @@
+/**
+ * SillyTavern Launcher 宝塔插件样式
+ * 使用 Bootstrap 基础 + 宝塔主题色
+ */
+
+/* Bootstrap CDN */
+@import url('https://cdn.jsdelivr.net/npm/bootstrap@3.4.1/dist/css/bootstrap.min.css');
+
+/* 字体图标 */
+@import url('https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css');
+
+/* 全局 Button 重置 - 确保自定义按钮样式生效 */
+button.stl-mode-btn {
+    background: #fff !important;
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
+    padding: 12px 10px !important;
+    border-radius: 6px !important;
+    color: #666 !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    text-align: center !important;
+    outline: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* 自定义颜色变量 */
+:root {
+    /* 宝塔主题色 */
+    --bt-primary: #20a53a;
+    --bt-primary-dark: #1a8c31;
+    --bt-primary-light: #2bc44e;
+    
+    /* 背景色 */
+    --bt-bg-main: #f5f6f7;
+    --bt-bg-card: #ffffff;
+    --bt-bg-dark: #1a1d27;
+    
+    /* 文字颜色 */
+    --bt-text-main: #3c3c3c;
+    --bt-text-secondary: #666666;
+    --bt-text-light: #999999;
+    
+    /* 功能色 */
+    --bt-success: #20a53a;
+    --bt-info: #337ab7;
+    --bt-warning: #f0ad4e;
+    --bt-danger: #d9534f;
+    
+    /* 状态色 */
+    --bt-status-starting: #337ab7;
+    --bt-status-started: #20a53a;
+    --bt-status-stopped: #f0ad4e;
+    --bt-status-error: #d9534f;
+}
+
+/* 全局重置 */
+body {
+    font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    color: var(--bt-text-main);
+    background: var(--bt-bg-main);
+    font-size: 13px;
+}
+
+/* 插件容器 */
+.bt-plugin-stl {
+    width: 100%;
+    min-height: 400px;
+}
+
+/* 侧边导航容器 - 限制高度不超出内容区 */
+.bt-w-menu {
+    overflow: hidden;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 侧边导航 */
+.stl-nav-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stl-nav-top {
+    flex: 1;
+}
+
+.stl-nav-bottom {
+    border-top: 1px solid #eee;
+    padding-top: 8px;
+}
+
+.stl-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 8px;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s;
+    color: #666;
+    min-width: 70px;
+}
+
+.stl-nav-item i {
+    font-size: 20px;
+    margin-bottom: 4px;
+}
+
+.stl-nav-item span {
+    font-size: 11px;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.stl-nav-item:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+.stl-nav-item.active {
+    background: #e8f5e9;
+    color: var(--bt-primary);
+}
+
+/* 页面通用样式 */
+.stl-page {
+    display: none;
+    padding: 20px;
+    overflow: hidden;
+}
+
+.stl-page.active {
+    display: block;
+    overflow: hidden;
+}
+
+/* 卡片样式 */
+.stl-card {
+    background: var(--bt-bg-card);
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    padding: 20px;
+    margin-bottom: 15px;
+}
+
+.stl-card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--bt-text-main);
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+/* 卡片内部分组标题 */
+.stl-section-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--bt-text-main);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stl-section-header i {
+    color: var(--bt-primary);
+}
+
+/* 按钮样式 */
+.btn-bt {
+    background: var(--bt-primary);
+    border-color: var(--bt-primary);
+    color: #fff;
+    padding: 8px 20px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.btn-bt:hover {
+    background: var(--bt-primary-dark);
+    border-color: var(--bt-primary-dark);
+    color: #fff;
+}
+
+.btn-bt:active {
+    background: var(--bt-primary-dark);
+}
+
+.btn-bt:disabled {
+    background: #ccc;
+    border-color: #ccc;
+    cursor: not-allowed;
+}
+
+.btn-bt-outline {
+    background: transparent;
+    border: 1px solid var(--bt-primary);
+    color: var(--bt-primary);
+    padding: 7px 19px;
+}
+
+.btn-bt-outline:hover {
+    background: var(--bt-primary);
+    color: #fff;
+}
+
+.btn-bt-danger {
+    background: var(--bt-danger);
+    border-color: var(--bt-danger);
+    color: #fff;
+}
+
+.btn-bt-danger:hover {
+    background: #c9302c;
+    border-color: #c9302c;
+}
+
+.btn-bt-sm {
+    padding: 5px 12px;
+    font-size: 12px;
+}
+
+/* 状态标签 */
+.stl-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.stl-status-stopped {
+    background: #f5f5f5;
+    color: #666;
+}
+
+.stl-status-starting {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.stl-status-started {
+    background: #e8f5e9;
+    color: #388e3c;
+}
+
+.stl-status-error {
+    background: #ffebee;
+    color: #d32f2f;
+}
+
+/* Grid 布局 */
+.stl-grid {
+    display: grid;
+    gap: 15px;
+}
+
+.stl-grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.stl-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.stl-grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 768px) {
+    .stl-grid-2,
+    .stl-grid-3,
+    .stl-grid-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .stl-grid-2,
+    .stl-grid-3,
+    .stl-grid-4 {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 快捷目录按钮 */
+.stl-dir-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 15px 10px;
+    background: #f9f9f9;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-height: 80px;
+}
+
+.stl-dir-btn:hover {
+    background: #f0f7f1;
+    border-color: var(--bt-primary);
+    color: var(--bt-primary);
+}
+
+.stl-dir-btn i {
+    font-size: 24px;
+    margin-bottom: 8px;
+    color: #888;
+}
+
+.stl-dir-btn:hover i {
+    color: var(--bt-primary);
+}
+
+.stl-dir-btn span {
+    font-size: 12px;
+    color: #666;
+}
+
+.stl-dir-btn:hover span {
+    color: var(--bt-primary);
+}
+
+/* 系统信息卡片 */
+.stl-info-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    background: #f9f9f9;
+    border-radius: 6px;
+    margin-bottom: 10px;
+}
+
+.stl-info-label {
+    display: flex;
+    align-items: center;
+    color: #666;
+    font-size: 13px;
+}
+
+.stl-info-label i {
+    margin-right: 8px;
+    color: #999;
+}
+
+.stl-info-value {
+    font-weight: 600;
+    color: #333;
+}
+
+/* 启动按钮大样式 */
+.btn-start-large {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 15px 30px;
+    font-size: 16px;
+    border-radius: 8px;
+    width: 100%;
+    margin-top: 15px;
+}
+
+.btn-start-large i {
+    font-size: 20px;
+}
+
+/* 警告提示 */
+.stl-alert {
+    padding: 12px 15px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+}
+
+.stl-alert-info {
+    background: #e3f2fd;
+    border: 1px solid #bbdefb;
+    color: #1976d2;
+}
+
+.stl-alert-warning {
+    background: #fff3e0;
+    border: 1px solid #ffcc80;
+    color: #f57c00;
+}
+
+.stl-alert-success {
+    background: #e8f5e9;
+    border: 1px solid #c8e6c9;
+    color: #388e3c;
+}
+
+.stl-alert-danger {
+    background: #ffebee;
+    border: 1px solid #ffcdd2;
+    color: #d32f2f;
+}
+
+/* 日志区域 */
+.stl-console {
+    background: var(--bt-bg-dark);
+    border-radius: 6px;
+    padding: 15px;
+    height: 350px;
+    overflow-y: auto;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.stl-console .log-line {
+    display: flex;
+    margin-bottom: 4px;
+}
+
+.stl-console .log-time {
+    color: #666;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+.stl-console .log-type {
+    width: 50px;
+    flex-shrink: 0;
+    font-weight: 600;
+    margin-right: 10px;
+}
+
+.stl-console .log-type-info { color: #64b5f6; }
+.stl-console .log-type-success { color: #81c784; }
+.stl-console .log-type-error { color: #e57373; }
+.stl-console .log-type-system { color: #ba68c8; }
+.stl-console .log-type-output { color: #90a4ae; }
+
+.stl-console .log-content {
+    color: #e0e0e0;
+    word-break: break-all;
+}
+
+.stl-console .log-content a {
+    color: #64b5f6;
+    text-decoration: underline;
+}
+
+.stl-console .log-content a:hover {
+    color: #90caf9;
+}
+
+/* 控制台顶部栏 */
+.stl-console-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 15px;
+    background: #fff;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.stl-console-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.stl-console-title i {
+    font-size: 18px;
+    color: #666;
+}
+
+.stl-console-title span {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.stl-console-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* 版本列表 */
+.stl-version-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px;
+    background: #fff;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    transition: all 0.2s;
+}
+
+.stl-version-item:hover {
+    border-color: var(--bt-primary);
+    box-shadow: 0 2px 8px rgba(32, 165, 58, 0.15);
+}
+
+.stl-version-item.current {
+    border-color: var(--bt-primary);
+    background: #f8fff8;
+}
+
+.stl-version-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.stl-version-icon {
+    width: 40px;
+    height: 40px;
+    background: #f0f7f1;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bt-primary);
+    font-size: 18px;
+}
+
+.stl-version-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: #333;
+}
+
+.stl-version-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 8px;
+}
+
+.stl-version-badge-current {
+    background: var(--bt-primary);
+    color: #fff;
+}
+
+.stl-version-badge-local {
+    background: #fff3e0;
+    color: #f57c00;
+}
+
+.stl-version-path {
+    font-size: 11px;
+    color: #999;
+    margin-top: 4px;
+}
+
+.stl-version-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Tab 切换 */
+.stl-tabs {
+    display: flex;
+    border-bottom: 2px solid #e5e5e5;
+    margin-bottom: 20px;
+}
+
+.stl-tab {
+    padding: 10px 20px;
+    font-size: 13px;
+    color: #666;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+}
+
+.stl-tab:hover {
+    color: var(--bt-primary);
+}
+
+.stl-tab.active {
+    color: var(--bt-primary);
+    border-bottom-color: var(--bt-primary);
+    font-weight: 600;
+}
+
+/* 设置表单 */
+.stl-form-group {
+    margin-bottom: 20px;
+}
+
+.stl-form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.stl-form-help {
+    font-size: 12px;
+    color: #999;
+    margin-top: 4px;
+}
+
+.stl-form-control {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    transition: border-color 0.2s;
+}
+
+.stl-form-control:focus {
+    outline: none;
+    border-color: var(--bt-primary);
+    box-shadow: 0 0 0 2px rgba(32, 165, 58, 0.1);
+}
+
+.stl-form-checkbox {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    cursor: pointer;
+}
+
+.stl-form-checkbox input {
+    margin-right: 8px;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--bt-primary);
+}
+
+.stl-form-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    background: #fff;
+    cursor: pointer;
+}
+
+/* 分组标题 */
+.stl-group-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+/* 空状态 */
+.stl-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #999;
+}
+
+.stl-empty i {
+    font-size: 40px;
+    margin-bottom: 15px;
+    opacity: 0.5;
+}
+
+.stl-empty p {
+    margin-bottom: 15px;
+}
+
+/* Banner 图片 */
+.stl-banner {
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+/* Flex 布局 */
+.stl-flex {
+    display: flex;
+}
+
+.stl-flex-between {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.stl-flex-center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.stl-flex-gap-10 {
+    gap: 10px;
+}
+
+.stl-flex-gap-15 {
+    gap: 15px;
+}
+
+/* 加载动画 */
+.stl-loading {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid var(--bt-primary);
+    border-radius: 50%;
+    animation: stl-spin 0.8s linear infinite;
+}
+
+@keyframes stl-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* 滚动条 */
+.stl-console::-webkit-scrollbar {
+    width: 8px;
+}
+
+.stl-console::-webkit-scrollbar-track {
+    background: #1a1d27;
+}
+
+.stl-console::-webkit-scrollbar-thumb {
+    background: #3a3d4d;
+    border-radius: 4px;
+}
+
+.stl-console::-webkit-scrollbar-thumb:hover {
+    background: #4a4d5d;
+}
+
+/* 模式切换按钮 */
+.stl-mode-switch {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+button.stl-mode-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #fff;
+    color: #666;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.2s;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+button.stl-mode-btn i {
+    font-size: 20px;
+    margin-bottom: 6px;
+}
+
+button.stl-mode-btn:hover {
+    border-color: var(--bt-primary) !important;
+    color: var(--bt-primary) !important;
+    box-shadow: 0 2px 8px rgba(32, 165, 58, 0.15) !important;
+}
+
+button.stl-mode-btn:focus {
+    border-color: var(--bt-primary) !important;
+    box-shadow: 0 0 0 2px rgba(32, 165, 58, 0.2) !important;
+}
+
+button.stl-mode-btn.active,
+button.stl-mode-btn.active:hover {
+    border-color: var(--bt-primary) !important;
+    background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%) !important;
+    color: var(--bt-primary) !important;
+    font-weight: 600 !important;
+}
+
+button.stl-mode-btn.active i {
+    color: var(--bt-primary) !important;
+}

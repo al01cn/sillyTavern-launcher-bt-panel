@@ -5,6 +5,7 @@ export PATH
 # ===== 插件基本信息（打包时自动从 package.json 替换） =====
 PLUGIN_NAME="{{#plugin_name#}}"
 install_path="/www/server/panel/plugin/${PLUGIN_NAME}"
+stl_path="/www/server/${PLUGIN_NAME}"
 
 # 安装
 Install()
@@ -16,6 +17,9 @@ Install()
     # 创建插件目录
     mkdir -p "${install_path}"
 
+    # 创建服务目录
+    mkdir -p "${stl_path}"
+
     # ====================================================
     # 依赖安装（如需安装系统依赖或 pip 包，在此处添加）
     # 例如：
@@ -23,12 +27,13 @@ Install()
     #   pip install some-python-package
     # ====================================================
 
-    # 复制插件文件到安装目录
-    cp -rf ./* "${install_path}/"
-
     # 设置目录权限
     chown -R root:root "${install_path}"
     chmod -R 755 "${install_path}"
+
+    # 设置服务目录权限
+    chown -R root:root "${stl_path}"
+    chmod -R 755 "${stl_path}"
 
     echo "=========================================="
     echo "{{#plugin_title#}} 插件安装完成！"
@@ -48,6 +53,9 @@ Uninstall()
 
     # 删除插件目录
     rm -rf "${install_path}"
+
+    # 删除服务目录
+    rm -rf "${stl_path}"
 
     echo "=========================================="
     echo "{{#title#}} 插件卸载完成！"

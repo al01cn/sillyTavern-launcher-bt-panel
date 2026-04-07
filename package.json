@@ -1,9 +1,9 @@
 {
   "title": "酒馆启动器",
-  "name": "sillyTavern-launcher",
+  "name": "stl",
   "ps": "酒馆启动器（仅Linux支持）宝塔面板插件版本",
   "versions": "0.0.1",
-  "checks": "/www/server/panel/plugin/sillyTavern-launcher",
+  "checks": "/www/server/panel/plugin/stl",
   "author": "灵狼AL01",
   "home": "https://github.com/al01cn/sillyTavern-launcher-bt-panel",
   "sort": 100,

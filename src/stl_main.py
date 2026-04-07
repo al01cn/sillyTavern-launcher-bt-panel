@@ -13,6 +13,12 @@ import json
 # 设置运行目录
 os.chdir("/www/server/panel")
 
+stl_path = os.path.join("/www/server/panel", "stl") # 插件根目录
+
+sillyTavern_path = os.path.join(stl_path, "sillyTavern") # 酒馆存放位置
+
+config_file = os.path.join(sillyTavern_path, "config.json") # 插件配置文件
+
 # 添加包引用位置并引用公共包
 sys.path.append("class/")
 import public # type: ignore
@@ -22,11 +28,11 @@ if __name__ != '__main__':
     from BTPanel import cache, session, redirect # type: ignore
 
 
-class demo_main:
-    """宝塔插件 DEMO - 后端主程序
+class stl_main:
+    """宝塔插件 stl - 后端主程序
 
     类名必须与文件名（不含 _main 后缀）一致。
-    前端通过 plugin?action=a&s=方法名&name=demo 调用。
+    前端通过 plugin?action=a&s=方法名&name=stl 调用。
     """
 
     __plugin_path = "/www/server/panel/plugin/{{#plugin_name#}}/"
@@ -34,19 +40,6 @@ class demo_main:
 
     def __init__(self):
         pass
-
-    # 访问 /demo/index.html 时调用，需要在 templates 中有 index.html
-    def index(self, args):
-        return self.ping(args)
-
-    def ping(self, args):
-        """心跳测试，验证前后端通信"""
-        import time
-        return {
-            "status": True,
-            "msg": "Hello World! 插件运行正常。",
-            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }
 
     # 读取配置项(插件自身的配置文件)
     # @param key   取指定配置项，若不传则取所有配置 [可选]
