@@ -54,7 +54,7 @@ var BTPlugin = (function () {
     function show_index() {
         var html = '<div class="bt-plugin-demo">'
             + '<div class="logos">'
-            + '<img id="bt-plugin-icon" src="/static/img/soft_ico/ico-{{#plugin_name#}}.png" alt="Plugin-Icon">'
+            + '<img id="bt-plugin-icon" src="https://ghfast.top/https://raw.githubusercontent.com/al01cn/sillyTavern-launcher/GUI/public/logo.png" alt="Plugin-Icon">'
             + '<span class="plus">+</span>'
             + '<img src="https://www.bt.cn/static/astro/icon/logo.svg" alt="BT-Logo">'
             + '</div>'

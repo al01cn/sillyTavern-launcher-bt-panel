@@ -1,11 +1,11 @@
 {
-  "title": "宝塔插件DEMO",
-  "name": "demo",
-  "ps": "宝塔插件开发示例项目，演示前后端交互、系统信息获取等常用功能",
-  "versions": "1.0",
-  "checks": "/www/server/panel/plugin/demo",
-  "author": "YourName",
-  "home": "https://github.com/yourname/bt-plugin-demo",
+  "title": "酒馆启动器",
+  "name": "sillyTavern-launcher",
+  "ps": "酒馆启动器（仅Linux支持）宝塔面板插件版本",
+  "versions": "0.0.1",
+  "checks": "/www/server/panel/plugin/sillyTavern-launcher",
+  "author": "灵狼AL01",
+  "home": "https://github.com/al01cn/sillyTavern-launcher-bt-panel",
   "sort": 100,
   "icon": "icon.png",
   "coexist": true
