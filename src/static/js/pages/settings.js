@@ -5,39 +5,23 @@
 function renderSettingsPage() {
     var html = 
         '<div class="stl-page active" id="page-settings">' +
-            // 通用设置
+            // 数据设置
             '<div class="stl-card">' +
-                '<div class="stl-group-title"><i class="bi bi-gear"></i> 通用设置</div>' +
-                
-                '<div class="stl-form-group">' +
-                    '<label class="stl-form-label">语言</label>' +
-                    '<select class="stl-form-select" id="setting-lang" onchange="BTPlugin.saveSettings()">' +
-                        '<option value="auto">自动检测</option>' +
-                        '<option value="zh-CN">简体中文</option>' +
-                        '<option value="en">English</option>' +
-                    '</select>' +
-                '</div>' +
-                
-                '<div class="stl-form-group">' +
-                    '<label class="stl-form-label">主题</label>' +
-                    '<select class="stl-form-select" id="setting-theme" onchange="BTPlugin.saveSettings()">' +
-                        '<option value="auto">跟随系统</option>' +
-                        '<option value="light">浅色</option>' +
-                        '<option value="dark">深色</option>' +
-                    '</select>' +
-                '</div>' +
-                
+                '<div class="stl-group-title"><i class="bi bi-database"></i> 数据设置</div>' +
+
                 '<div class="stl-form-group">' +
                     '<label class="stl-form-checkbox">' +
-                        '<input type="checkbox" id="setting-animations" checked onchange="BTPlugin.saveSettings()">' +
-                        '<span>启用动画效果</span>' +
+                        '<input type="checkbox" id="setting-keep-data" checked onchange="stl_onKeepDataChange()">' +
+                        '<span>卸载插件时保留数据目录（/www/server/stl）</span>' +
                     '</label>' +
+                    '<div class="stl-form-help">取消后，卸载会顺带删除 /www/server/stl，慎用。</div>' +
                 '</div>' +
             '</div>' +
 
             // GitHub 加速（模块驱动）
             '<div class="stl-card">' +
                 '<div class="stl-group-title"><i class="bi bi-lightning-charge"></i> GitHub 加速</div>' +
+
 
                 '<div class="stl-form-group">' +
                     '<label class="stl-form-checkbox">' +
@@ -99,17 +83,26 @@ function renderSettingsPage() {
 
                 '<div class="stl-form-group">' +
                     '<label class="stl-form-label">代理模式</label>' +
-                    '<select class="stl-form-select" id="setting-proxy-mode" onchange="BTPlugin.saveSettings()">' +
+                    '<select class="stl-form-select" id="setting-proxy-mode" onchange="stl_onProxyModeChange()">' +
                         '<option value="none">不使用代理</option>' +
                         '<option value="system">跟随系统</option>' +
                         '<option value="custom">自定义代理</option>' +
                     '</select>' +
                 '</div>' +
 
+                '<div class="stl-form-group" id="proxy-system-info" style="display: none;">' +
+                    '<div class="stl-form-help" id="proxy-system-status" style="margin-bottom:6px;">-</div>' +
+                '</div>' +
+
                 '<div class="stl-form-group" id="proxy-custom-fields" style="display: none;">' +
                     '<div class="stl-flex" style="gap:10px;">' +
-                        '<input type="text" class="stl-form-control" id="setting-proxy-host" placeholder="127.0.0.1" onchange="BTPlugin.saveSettings()">' +
-                        '<input type="number" class="stl-form-control" id="setting-proxy-port" placeholder="7890" onchange="BTPlugin.saveSettings()">' +
+                        '<input type="text" class="stl-form-control" id="setting-proxy-host" placeholder="127.0.0.1">' +
+                        '<input type="number" class="stl-form-control" id="setting-proxy-port" placeholder="7890">' +
+                    '</div>' +
+                    '<div class="stl-flex" style="justify-content:flex-end;margin-top:8px;">' +
+                        '<button class="btn btn-bt btn-bt-sm" onclick="stl_saveProxyConfig()">' +
+                            '<i class="bi bi-check-lg"></i> 保存代理' +
+                        '</button>' +
                     '</div>' +
                 '</div>' +
             '</div>' +
@@ -149,34 +142,7 @@ function renderSettingsPage() {
                 '</div>' +
             '</div>' +
 
-            // 启动设置
-            '<div class="stl-card">' +
-                '<div class="stl-group-title"><i class="bi bi-play"></i> 启动设置</div>' +
 
-                '<div class="stl-form-group">' +
-                    '<label class="stl-form-label">启动方式</label>' +
-                    '<select class="stl-form-select" id="setting-launch-mode" onchange="BTPlugin.saveSettings()">' +
-                        '<option value="default">默认方式</option>' +
-                        '<option value="background">后台运行</option>' +
-                        '<option value="visible">可见窗口</option>' +
-                    '</select>' +
-                '</div>' +
-
-                '<div class="stl-form-group">' +
-                    '<label class="stl-form-label">数据目录</label>' +
-                    '<select class="stl-form-select" id="setting-data-mode" onchange="BTPlugin.saveSettings()">' +
-                        '<option value="default">默认位置</option>' +
-                        '<option value="custom">自定义位置</option>' +
-                    '</select>' +
-                '</div>' +
-            '</div>' +
-
-            // 保存按钮
-            '<div style="text-align: center; margin-top: 20px;">' +
-                '<button class="btn btn-bt" onclick="BTPlugin.saveSettings()">' +
-                    '<i class="bi bi-check-lg"></i> 保存设置' +
-                '</button>' +
-            '</div>' +
         '</div>';
 
     $('.plugin_body').html(html);
@@ -837,14 +803,153 @@ function stl_testGithubProxy() {
 //  通用设置
 // ════════════════════════════════════════════════════════
 
-function loadSettings() {
-    $('#setting-proxy-mode').val('none');
-    $('#setting-proxy-mode').on('change', function () {
-        $('#proxy-custom-fields').toggle($(this).val() === 'custom');
+// ════════════════════════════════════════════════════════
+//  网络代理设置
+// ════════════════════════════════════════════════════════
+
+/**
+ * 从后端加载代理配置并渲染 UI
+ */
+function loadProxySettings() {
+    request_plugin('get_proxy_config', {}, function (rdata) {
+        if (!rdata || !rdata.status) return;
+
+        var mode = rdata.mode || 'none';
+        $('#setting-proxy-mode').val(mode);
+
+        // 自定义代理：回填 host/port
+        $('#setting-proxy-host').val(rdata.host || '');
+        $('#setting-proxy-port').val(rdata.port || '');
+
+        // 根据模式显示对应区域
+        stl_toggleProxyFields(mode);
+
+        // 跟随系统：显示系统代理信息
+        if (mode === 'system') {
+            stl_renderSystemProxyInfo(rdata.system_proxy);
+        }
+
+        // 数据设置复选框
+        var keepFlag = (typeof rdata.keep_data === 'boolean') ? rdata.keep_data : true;
+        $('#setting-keep-data').prop('checked', keepFlag);
+
     });
 }
 
+
+/**
+ * 代理模式切换时的 UI 响应
+ */
+function stl_onProxyModeChange() {
+    var mode = $('#setting-proxy-mode').val();
+    stl_toggleProxyFields(mode);
+
+    stl_saveProxyMode(mode, function (rdata) {
+        if (!rdata || !rdata.status) {
+            layer.msg(rdata && rdata.msg || '保存失败', { icon: 2 });
+            return;
+        }
+
+        if (rdata.mode === 'system') {
+            stl_renderSystemProxyInfo(rdata.system_proxy);
+        } else if (mode === 'system' && rdata.mode !== 'system') {
+            // 用户选择系统，但后端无法获取 → 回退并提示
+            $('#setting-proxy-mode').val(rdata.mode || 'none');
+            stl_toggleProxyFields(rdata.mode || 'none');
+            layer.msg(rdata.msg || '未检测到系统代理环境变量，已切换为不使用代理', { icon: 0 });
+        }
+    });
+}
+
+/**
+ * 根据模式切换显示区域
+ */
+function stl_toggleProxyFields(mode) {
+    $('#proxy-custom-fields').toggle(mode === 'custom');
+    $('#proxy-system-info').toggle(mode === 'system');
+}
+
+/**
+ * 渲染系统代理环境变量信息
+ */
+function stl_renderSystemProxyInfo(sysProxy) {
+    var $el = $('#proxy-system-status');
+    if (!sysProxy) {
+        $el.html('<span style="color:#faad14;"><i class="bi bi-exclamation-triangle"></i> 未检测到系统代理环境变量（http_proxy/https_proxy/all_proxy），建议使用自定义代理。</span>');
+        return;
+    }
+    var parts = [];
+    if (sysProxy.http_proxy) parts.push('<code>http_proxy=' + sysProxy.http_proxy + '</code>');
+    if (sysProxy.https_proxy) parts.push('<code>https_proxy=' + sysProxy.https_proxy + '</code>');
+    if (sysProxy.all_proxy) parts.push('<code>all_proxy=' + sysProxy.all_proxy + '</code>');
+    $el.html('<span style="color:#20a53a;"><i class="bi bi-check-circle"></i> 已检测到系统代理：</span><br>' + parts.join('<br>'));
+}
+
+/**
+ * 仅保存代理模式（none/system/custom）
+ */
+function stl_saveProxyMode(mode, callback) {
+    request_plugin('save_proxy_config', { mode: mode }, function (rdata) {
+        if (rdata && rdata.mode === 'system') {
+            stl_renderSystemProxyInfo(rdata.system_proxy);
+        }
+        if (callback) callback(rdata);
+    });
+}
+
+/**
+ * 保留数据复选框变更
+ */
+function stl_onKeepDataChange() {
+    var keep = $('#setting-keep-data').is(':checked');
+    request_plugin('save_proxy_config', { keep_data: keep }, function (rdata) {
+        if (!rdata || !rdata.status) {
+            layer.msg(rdata && rdata.msg || '保存失败', { icon: 2 });
+            $('#setting-keep-data').prop('checked', !keep);
+            return;
+        }
+        $('#setting-keep-data').prop('checked', rdata.keep_data !== false);
+    });
+}
+
+
+/**
+ * 保存自定义代理配置
+ */
+function stl_saveProxyConfig() {
+    var host = ($('#setting-proxy-host').val() || '').trim();
+    var port = ($('#setting-proxy-port').val() || '').trim();
+
+    if (!host || !port) {
+        layer.msg('请填写代理地址和端口', { icon: 0 });
+        return;
+    }
+
+    request_plugin('save_proxy_config', {
+        mode: 'custom',
+        host: host,
+        port: port
+    }, function (rdata) {
+        if (rdata && rdata.status) {
+            $('#setting-proxy-host').val(rdata.host || '127.0.0.1');
+            $('#setting-proxy-port').val(rdata.port || '7890');
+            $('#setting-keep-data').prop('checked', rdata.keep_data !== false);
+            layer.msg('代理配置已保存', { icon: 1 });
+        } else {
+            layer.msg(rdata && rdata.msg || '保存失败', { icon: 2 });
+        }
+    });
+}
+
+
+function loadSettings() {
+    // 从后端加载代理配置 & 数据设置
+    loadProxySettings();
+}
+
+
 function saveSettings() {
+    // 代理设置现在通过 stl_saveProxyConfig 独立保存
     layer.msg('设置已保存', { icon: 1 });
 }
 

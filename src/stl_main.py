@@ -18,7 +18,7 @@ stl_path = os.path.join("/www/server", "stl") # 插件数据根目录
 
 sillyTavern_path = os.path.join(stl_path, "sillyTavern") # 酒馆存放位置
 
-config_file = os.path.join(sillyTavern_path, "config.json") # 插件配置文件
+config_file = os.path.join(stl_path, "config.json") # 插件配置文件
 
 # 添加包引用位置并引用公共包
 sys.path.append("class/")
@@ -47,33 +47,65 @@ class stl_main:
     # @param force 强制从文件重新读取配置项 [可选]
     def __get_config(self, key=None, force=False):
         if not self.__config or force:
-            if not os.path.exists(config_file):
-                return None
-            f_body = public.ReadFile(config_file)
-            if not f_body:
-                return None
-            self.__config = json.loads(f_body)
+            if os.path.exists(config_file):
+                f_body = public.ReadFile(config_file)
+                if f_body:
+                    try:
+                        self.__config = json.loads(f_body)
+                    except Exception:
+                        self.__config = {}
+                else:
+                    self.__config = {}
+            else:
+                # 首次读取：确保目录存在并创建空文件
+                self._ensure_config_dir()
+                self.__config = {}
+                try:
+                    public.WriteFile(config_file, json.dumps(self.__config))
+                except Exception:
+                    pass
+
+        if not self.__config:
+            self.__config = {}
 
         if key:
-            if key in self.__config:
-                return self.__config[key]
-            return None
+            return self.__config.get(key)
         return self.__config
 
     # 设置配置项(插件自身的配置文件)
     # @param key   要被修改或添加的配置项 [可选]
     # @param value 配置值 [可选]
     def __set_config(self, key=None, value=None):
-        if not self.__config:
-            self.__config = {}
+        self._ensure_config_dir()
 
-        if key:
+        if not self.__config or not isinstance(self.__config, dict):
+            self.__config = self.__get_config(force=True) or {}
+
+        if key is not None:
             self.__config[key] = value
+        elif isinstance(value, dict):
+            self.__config = value
 
         public.WriteFile(config_file, json.dumps(self.__config))
         return True
 
+    def _ensure_config_dir(self):
+        """确保 config.json 所在目录存在"""
+        config_dir = os.path.dirname(config_file)
+        if not os.path.exists(config_dir):
+            try:
+                os.makedirs(config_dir, exist_ok=True)
+            except Exception:
+                pass
+
+        if not os.path.exists(config_file):
+            try:
+                public.WriteFile(config_file, json.dumps({}))
+            except Exception:
+                pass
+
     def get_nodejs_version(self, args):
+
         """获取系统当前默认的 Node.js 版本（执行 node -v）"""
         try:
             result = public.ExecShell('node -v')
@@ -122,6 +154,213 @@ class stl_main:
             return {'status': False, 'msg': msg, 'registry': ''}
         except Exception as e:
             return {'status': False, 'msg': str(e), 'registry': ''}
+
+    # ==================== 网络代理相关 ====================
+
+    def get_proxy_config(self, args):
+        """获取网络代理配置
+
+        返回: { status, mode, host, port, system_proxy, keep_data }
+          - mode: 'none' | 'system' | 'custom'
+          - host/port: 自定义代理信息
+          - system_proxy: { http_proxy, https_proxy, all_proxy } 或 null
+          - keep_data: bool 卸载时是否保留数据
+        """
+        config = self.__get_config(force=True) or {}
+        proxy_config = config.get('proxy') or {}
+        mode = proxy_config.get('mode', 'none')
+        host = proxy_config.get('host', '')
+        port = proxy_config.get('port', '')
+
+        # 跟随系统时，读取环境变量；未获取到则自动回退为不使用代理
+        system_proxy = None
+        if mode == 'system':
+            system_proxy = self._read_system_proxy_env()
+            if not system_proxy:
+                mode = 'none'
+                host = ''
+                port = ''
+                self.__set_config('proxy', {
+                    'mode': 'none',
+                    'host': host,
+                    'port': port
+                })
+
+        keep_data = config.get('keep_data', True)
+
+        return {
+            'status': True,
+            'mode': mode,
+            'host': host,
+            'port': port,
+            'system_proxy': system_proxy,
+            'keep_data': keep_data
+        }
+
+
+
+
+    def save_proxy_config(self, args):
+        """保存网络代理配置或数据设置
+
+        参数 args:
+          - mode: 'none' | 'system' | 'custom'
+          - host: 代理地址（custom 模式时）
+          - port: 代理端口（custom 模式时）
+          - keep_data: bool，卸载时保留数据目录
+        返回: { status, msg }
+        """
+        config = self.__get_config(force=True) or {}
+        proxy_config = config.get('proxy') or {}
+        keep_data = config.get('keep_data', True)
+
+        if 'keep_data' in args:
+            keep_flag = args.get('keep_data')
+            if isinstance(keep_flag, str):
+                keep_flag = keep_flag.lower() in ('1', 'true', 'on', 'yes')
+            keep_data = bool(keep_flag)
+
+
+        if 'mode' in args:
+            mode = (args.get('mode') or 'none').strip()
+            if mode not in ('none', 'system', 'custom'):
+                return {'status': False, 'msg': '无效的代理模式: ' + mode}
+
+            host = ''
+            port = ''
+            msg = '代理配置已保存'
+            system_proxy = None
+
+            if mode == 'custom':
+                host = (args.get('host') or '').strip() or '127.0.0.1'
+                port = (args.get('port') or '').strip() or '7890'
+            elif mode == 'system':
+                sys_proxy = self._read_system_proxy_env()
+                if not sys_proxy:
+                    mode = 'none'
+                    msg = '未检测到系统代理环境变量，已切换为不使用代理'
+                else:
+                    system_proxy = sys_proxy
+
+            proxy_config = {
+                'mode': mode,
+                'host': host,
+                'port': port,
+                'system_proxy': system_proxy,
+                'msg': msg
+            }
+        else:
+            proxy_config.setdefault('mode', 'none')
+            proxy_config.setdefault('host', '')
+            proxy_config.setdefault('port', '')
+            proxy_config['system_proxy'] = None
+            proxy_config['msg'] = '设置已保存'
+
+
+        config['proxy'] = {
+            'mode': proxy_config.get('mode', 'none'),
+            'host': proxy_config.get('host', ''),
+            'port': proxy_config.get('port', '')
+        }
+        config['keep_data'] = keep_data
+        self.__set_config(None, config)
+
+        return {
+            'status': True,
+            'msg': proxy_config.get('msg', '设置已保存'),
+            'mode': config['proxy']['mode'],
+            'host': config['proxy']['host'],
+            'port': config['proxy']['port'],
+            'system_proxy': proxy_config.get('system_proxy'),
+            'keep_data': keep_data
+        }
+
+
+
+
+
+    def _read_system_proxy_env(self):
+        """读取系统环境变量中的代理设置
+
+        返回: { http_proxy, https_proxy, all_proxy } 或 None（未设置时）
+        """
+        http_proxy = os.environ.get('http_proxy') or os.environ.get('HTTP_PROXY') or ''
+        https_proxy = os.environ.get('https_proxy') or os.environ.get('HTTPS_PROXY') or ''
+        all_proxy = os.environ.get('all_proxy') or os.environ.get('ALL_PROXY') or ''
+
+        if not http_proxy and not https_proxy and not all_proxy:
+            return None
+
+        return {
+            'http_proxy': http_proxy,
+            'https_proxy': https_proxy,
+            'all_proxy': all_proxy
+        }
+
+    def get_proxy_env(self, args):
+        """获取当前生效的代理环境变量（用于执行 Git/NPM 等命令时注入）
+
+        返回: { status, env } 其中 env 为需要注入的环境变量字典，无代理时为空 {}
+        """
+        proxy_config = self.__get_config('proxy') or {}
+        mode = proxy_config.get('mode', 'none')
+
+        env_vars = {}
+
+        if mode == 'custom':
+            host = proxy_config.get('host', '').strip()
+            port = proxy_config.get('port', '').strip()
+            if host and port:
+                proxy_url = 'http://' + host + ':' + port
+                env_vars['http_proxy'] = proxy_url
+                env_vars['https_proxy'] = proxy_url
+                env_vars['all_proxy'] = 'socks5://' + host + ':' + port
+        elif mode == 'system':
+            # 跟随系统：直接从环境变量透传
+            sys_proxy = self._read_system_proxy_env()
+            if sys_proxy:
+                if sys_proxy.get('http_proxy'):
+                    env_vars['http_proxy'] = sys_proxy['http_proxy']
+                if sys_proxy.get('https_proxy'):
+                    env_vars['https_proxy'] = sys_proxy['https_proxy']
+                if sys_proxy.get('all_proxy'):
+                    env_vars['all_proxy'] = sys_proxy['all_proxy']
+
+        return {
+            'status': True,
+            'env': env_vars,
+            'mode': mode
+        }
+
+    def _get_proxy_env_dict(self):
+        """内部方法：获取合并了代理设置的环境变量字典
+
+        用于 subprocess.Popen 的 env 参数。
+        返回 os.environ.copy() + 代理环境变量
+        """
+        env = os.environ.copy()
+        proxy_config = self.__get_config('proxy') or {}
+        mode = proxy_config.get('mode', 'none')
+
+        if mode == 'custom':
+            host = proxy_config.get('host', '').strip()
+            port = proxy_config.get('port', '').strip()
+            if host and port:
+                proxy_url = 'http://' + host + ':' + port
+                env['http_proxy'] = proxy_url
+                env['https_proxy'] = proxy_url
+                env['all_proxy'] = 'socks5://' + host + ':' + port
+        elif mode == 'system':
+            sys_proxy = self._read_system_proxy_env()
+            if sys_proxy:
+                if sys_proxy.get('http_proxy'):
+                    env['http_proxy'] = sys_proxy['http_proxy']
+                if sys_proxy.get('https_proxy'):
+                    env['https_proxy'] = sys_proxy['https_proxy']
+                if sys_proxy.get('all_proxy'):
+                    env['all_proxy'] = sys_proxy['all_proxy']
+
+        return env
 
     # ==================== PM2 相关 ====================
 
@@ -512,7 +751,7 @@ class stl_main:
                     text=True,
                     encoding='utf-8',
                     errors='replace',
-                    env=os.environ.copy()
+                    env=self._get_proxy_env_dict()
                 )
 
                 t_out = _threading.Thread(target=_read_stream, args=(proc.stdout, _on_line), daemon=True)
@@ -896,7 +1135,7 @@ class stl_main:
                     cmd, cwd=cwd,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     text=True, encoding='utf-8', errors='replace',
-                    env=os.environ.copy()
+                    env=self._get_proxy_env_dict()
                 )
                 t_out = _threading.Thread(target=_read_stream, args=(proc.stdout, _on_line), daemon=True)
                 t_err = _threading.Thread(target=_read_stream, args=(proc.stderr, _on_line), daemon=True)
@@ -940,7 +1179,8 @@ class stl_main:
                 # 切换到 release 分支
                 _write_line('[INFO] 切换到 ' + branch + ' 分支...')
                 subprocess.call(['git', 'checkout', branch], cwd=st_path,
-                               stdout=open(os.devnull, 'w'), stderr=open(os.devnull, 'w'))
+                               stdout=open(os.devnull, 'w'), stderr=open(os.devnull, 'w'),
+                               env=self._get_proxy_env_dict())
 
                 # git fetch + git pull
                 _write_line('[INFO] 正在拉取 ' + branch + ' 分支最新代码（git fetch）...')
@@ -1618,7 +1858,7 @@ class stl_main:
                         'git', '-c', 'credential.helper=',
                         'ls-remote', '--heads', test_url
                     ]
-                    env = os.environ.copy()
+                    env = self._get_proxy_env_dict()
                     env['GIT_TERMINAL_PROMPT'] = '0'
 
                     proc = subprocess.Popen(

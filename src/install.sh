@@ -6,6 +6,7 @@ export PATH
 PLUGIN_NAME="{{#plugin_name#}}"
 install_path="/www/server/panel/plugin/${PLUGIN_NAME}"
 stl_path="/www/server/${PLUGIN_NAME}"
+config_file="${stl_path}/config.json"
 
 # 安装
 Install()
@@ -51,16 +52,42 @@ Uninstall()
     # 依赖清理（如需卸载系统依赖或 pip 包，在此处添加）
     # ====================================================
 
+    keep_data=1
+    if [ -f "${config_file}" ]; then
+        keep_data=$(python3 - <<EOF
+import json
+import sys
+try:
+    with open(r"${config_file}", 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    keep = data.get('keep_data', True)
+    sys.stdout.write('1' if keep else '0')
+except Exception:
+    sys.stdout.write('1')
+EOF
+)
+        if [ -z "${keep_data}" ]; then
+            keep_data=1
+        fi
+    fi
+
+
+
     # 删除插件目录
     rm -rf "${install_path}"
 
-    # 删除服务目录
-    rm -rf "${stl_path}"
+    if [ "${keep_data}" -eq 0 ]; then
+        echo "[警告] 根据设置，卸载将删除 ${stl_path}"
+        rm -rf "${stl_path}"
+    else
+        echo "保留数据目录：${stl_path}"
+    fi
 
     echo "=========================================="
     echo "{{#title#}} 插件卸载完成！"
     echo "=========================================="
 }
+
 
 # 操作判断
 action="${1}"

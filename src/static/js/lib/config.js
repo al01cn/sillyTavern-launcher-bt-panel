@@ -8,4 +8,9 @@ var Config_Json = {
         enabled: false, // 是否启用Github CDN加速
         url: 'https://ghfast.top/'// 公益 Github CDN地址
     },
+    PROXY:{ // 全局代理设置
+        mode: 'none',   // 代理模式: 'none' | 'system' | 'custom'
+        host: '',       // 自定义代理地址
+        port: ''        // 自定义代理端口
+    }
 }
