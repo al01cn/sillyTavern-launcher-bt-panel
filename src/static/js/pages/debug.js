@@ -1,5 +1,5 @@
 /**
- * Debug 测试页面 - PM2 模块测试
+ * Debug 测试页面 - SillyTavern 模块测试
  * 临时调试用，上线前删除
  */
 
@@ -13,15 +13,15 @@ function renderDebugPage() {
             // 标题
             '<div class="stl-card">' +
                 '<div class="stl-card-title">' +
-                    '<i class="bi bi-bug"></i> PM2 模块测试' +
+                    '<i class="bi bi-bug"></i> SillyTavern 模块测试' +
                 '</div>' +
                 '<div class="stl-alert stl-alert-warning">' +
                     '<i class="bi bi-exclamation-triangle" style="margin-right:8px;"></i>' +
                     '此页面仅供开发调试，上线前请移除。' +
                 '</div>' +
                 '<div class="stl-info-item" style="margin-top:10px;">' +
-                    '<span class="stl-info-label"><i class="bi bi-key"></i> APP_NAME</span>' +
-                    '<span class="stl-info-value"><code>' + Pm2.APP_NAME + '</code></span>' +
+                    '<span class="stl-info-label"><i class="bi bi-link-45deg"></i> GITHUB_URL</span>' +
+                    '<span class="stl-info-value"><code style="word-break:break-all;">' + SillyTavern.GITHUB_URL + '</code></span>' +
                 '</div>' +
             '</div>' +
 
@@ -31,110 +31,111 @@ function renderDebugPage() {
                     '<i class="bi bi-box-seam"></i> 基础检测' +
                 '</div>' +
 
-                // 1. 获取 PM2 版本
+                // 1. 获取版本
                 '<div class="stl-info-item">' +
-                    '<span class="stl-info-label"><i class="bi bi-terminal"></i> getPm2Version()</span>' +
-                    '<span class="stl-info-value" id="test-pm2-version">--</span>' +
+                    '<span class="stl-info-label"><i class="bi bi-tag"></i> getSillyTavernVersion()</span>' +
+                    '<span class="stl-info-value" id="test-st-version">--</span>' +
                 '</div>' +
-                '<button class="btn btn-bt btn-bt-sm" onclick="testGetPm2Version()" style="margin:0 0 15px 0;">' +
+                '<button class="btn btn-bt btn-bt-sm" onclick="testGetVersion()" style="margin:0 0 15px 0;">' +
                     '<i class="bi bi-play-fill"></i> 获取版本' +
                 '</button>' +
 
-                // 2. 检测 PM2 是否已安装
+                // 2. 检测安装
                 '<div class="stl-info-item">' +
-                    '<span class="stl-info-label"><i class="bi bi-check-circle"></i> isPm2Installed()</span>' +
-                    '<span class="stl-info-value" id="test-pm2-install">--</span>' +
+                    '<span class="stl-info-label"><i class="bi bi-check-circle"></i> isSillyTavernInstall()</span>' +
+                    '<span class="stl-info-value" id="test-st-install">--</span>' +
                 '</div>' +
-                '<button class="btn btn-bt btn-bt-sm" onclick="testIsPm2Installed()" style="margin:0 0 15px 0;">' +
+                '<button class="btn btn-bt btn-bt-sm" onclick="testIsInstalled()" style="margin:0 0 15px 0;">' +
                     '<i class="bi bi-play-fill"></i> 检测安装' +
                 '</button>' +
+
+            '</div>' +
+
+            // 路径管理区
+            '<div class="stl-card">' +
+                '<div class="stl-section-header">' +
+                    '<i class="bi bi-folder2-open"></i> 路径管理' +
+                '</div>' +
+
+                // 获取当前路径
+                '<div class="stl-info-item">' +
+                    '<span class="stl-info-label"><i class="bi bi-signpost-2"></i> getStPath()</span>' +
+                    '<span class="stl-info-value" id="test-st-path">--</span>' +
+                '</div>' +
+                '<button class="btn btn-bt btn-bt-sm" onclick="testGetPath()" style="margin:0 0 15px 0;">' +
+                    '<i class="bi bi-play-fill"></i> 获取当前路径' +
+                '</button>' +
+
+                // 设置自定义路径
+                '<div class="stl-flex stl-flex-gap-10" style="margin:0 0 10px 0;">' +
+                    '<input type="text" class="stl-form-control" id="test-set-path-input" placeholder="输入自定义酒馆路径" style="flex:1;">' +
+                    '<button class="btn btn-bt btn-bt-sm" onclick="testSetPath()">' +
+                        '<i class="bi bi-pencil"></i> 设置路径' +
+                    '</button>' +
+                    '<button class="btn btn-bt-outline btn-bt-sm" onclick="testResetPath()">' +
+                        '<i class="bi bi-arrow-counterclockwise"></i> 恢复默认' +
+                    '</button>' +
+                '</div>' +
+                '<div class="stl-info-item">' +
+                    '<span class="stl-info-label" style="opacity:0;">状态</span>' +
+                    '<span class="stl-info-value" id="test-set-path-result">--</span>' +
+                '</div>' +
 
             '</div>' +
 
             // 安装区
             '<div class="stl-card">' +
                 '<div class="stl-section-header">' +
-                    '<i class="bi bi-rocket-takeoff"></i> 安装 PM2' +
+                    '<i class="bi bi-rocket-takeoff"></i> 安装 SillyTavern' +
                 '</div>' +
-                '<button class="btn btn-bt" id="test-auto-install-pm2-btn" onclick="testAutoInstallPm2()">' +
+                '<button class="btn btn-bt" id="test-auto-install-btn" onclick="testAutoInstall()">' +
                     '<i class="bi bi-play-fill"></i> 智能安装（自动检测）' +
                 '</button>' +
                 '<div class="stl-info-item" style="margin-top:10px;">' +
                     '<span class="stl-info-label"><i class="bi bi-signpost-split"></i> 当前进度</span>' +
-                    '<span class="stl-info-value" id="test-pm2-progress">--</span>' +
+                    '<span class="stl-info-value" id="test-st-progress">--</span>' +
                 '</div>' +
             '</div>' +
 
-            // SillyTavern 运行管理区
+            // 更新区
             '<div class="stl-card">' +
                 '<div class="stl-section-header">' +
-                    '<i class="bi bi-lightning-charge"></i> SillyTavern 运行管理' +
+                    '<i class="bi bi-arrow-repeat"></i> 版本更新' +
                 '</div>' +
 
-                // 3. 获取运行状态
+                // 检查更新
                 '<div class="stl-info-item">' +
-                    '<span class="stl-info-label"><i class="bi bi-activity"></i> getStatus()</span>' +
-                    '<span class="stl-info-value" id="test-pm2-status">--</span>' +
+                    '<span class="stl-info-label"><i class="bi bi-search"></i> checkUpdate()</span>' +
+                    '<span class="stl-info-value" id="test-st-check-update">--</span>' +
                 '</div>' +
-                '<button class="btn btn-bt btn-bt-sm" onclick="testGetStatus()" style="margin:0 0 15px 0;">' +
-                    '<i class="bi bi-play-fill"></i> 查看状态' +
+                '<button class="btn btn-bt btn-bt-sm" onclick="testCheckUpdate()" style="margin:0 0 15px 0;">' +
+                    '<i class="bi bi-play-fill"></i> 检查更新' +
                 '</button>' +
 
-                // 4. 创建/启动实例
+                // 执行更新
                 '<div class="stl-info-item">' +
-                    '<span class="stl-info-label"><i class="bi bi-play-circle"></i> start()</span>' +
-                    '<span class="stl-info-value" id="test-pm2-start">--</span>' +
+                    '<span class="stl-info-label"><i class="bi bi-cloud-download"></i> updateSillyTavern()</span>' +
+                    '<span class="stl-info-value" id="test-st-update">--</span>' +
                 '</div>' +
-                '<button class="btn btn-bt btn-bt-sm" onclick="testStart()" style="margin:0 0 15px 0;">' +
-                    '<i class="bi bi-play-fill"></i> 启动 SillyTavern' +
+                '<button class="btn btn-bt btn-bt-sm" onclick="testUpdate()" style="margin:0 0 15px 0;">' +
+                    '<i class="bi bi-play-fill"></i> 执行更新' +
                 '</button>' +
 
-                // 5. 停止实例
+            '</div>' +
+
+            // 删除区
+            '<div class="stl-card">' +
+                '<div class="stl-section-header">' +
+                    '<i class="bi bi-trash3"></i> 删除 SillyTavern' +
+                '</div>' +
+
                 '<div class="stl-info-item">' +
-                    '<span class="stl-info-label"><i class="bi bi-stop-circle"></i> stop()</span>' +
-                    '<span class="stl-info-value" id="test-pm2-stop">--</span>' +
+                    '<span class="stl-info-label"><i class="bi bi-x-octagon"></i> deleteSillyTavern()</span>' +
+                    '<span class="stl-info-value" id="test-st-delete">--</span>' +
                 '</div>' +
-                '<button class="btn btn-bt-outline btn-bt-sm" onclick="testStop()" style="margin:0 0 15px 0;">' +
-                    '<i class="bi bi-stop-fill"></i> 停止 SillyTavern' +
+                '<button class="btn btn-bt btn-bt-sm" onclick="testDelete()" style="margin:0 0 15px 0;background:#d9534f;border-color:#d9534f;">' +
+                    '<i class="bi bi-trash3-fill"></i> 删除 SillyTavern' +
                 '</button>' +
-
-                // 8. 重启实例
-                '<div class="stl-info-item">' +
-                    '<span class="stl-info-label"><i class="bi bi-arrow-clockwise"></i> restart()</span>' +
-                    '<span class="stl-info-value" id="test-pm2-restart">--</span>' +
-                '</div>' +
-                '<button class="btn btn-bt btn-bt-sm" onclick="testRestart()" style="margin:0 0 15px 0;">' +
-                    '<i class="bi bi-arrow-clockwise"></i> 重启 SillyTavern' +
-                '</button>' +
-
-                // 9. 强制停止
-                '<div class="stl-info-item">' +
-                    '<span class="stl-info-label"><i class="bi bi-x-octagon"></i> forceStop()</span>' +
-                    '<span class="stl-info-value" id="test-pm2-force-stop">--</span>' +
-                '</div>' +
-                '<button class="btn btn-bt btn-bt-sm" onclick="testForceStop()" style="margin:0 0 15px 0;background:#d9534f;border-color:#d9534f;">' +
-                    '<i class="bi bi-x-octagon-fill"></i> 强制停止 SillyTavern' +
-                '</button>' +
-
-                // 6. 获取日志
-                '<div class="stl-section-header" style="margin-top:10px;">' +
-                    '<i class="bi bi-journal-text"></i> getLogs()' +
-                '</div>' +
-                '<div class="stl-flex stl-flex-gap-10" style="margin:0 0 10px 0;">' +
-                    '<select class="stl-form-control" id="test-log-type" style="width:120px;">' +
-                        '<option value="all">全部日志</option>' +
-                        '<option value="out">标准输出</option>' +
-                        '<option value="err">错误输出</option>' +
-                    '</select>' +
-                    '<input type="number" class="stl-form-control" id="test-log-lines" value="100" min="10" max="2000" style="width:100px;" placeholder="行数">' +
-                    '<button class="btn btn-bt btn-bt-sm" onclick="testGetLogs()">' +
-                        '<i class="bi bi-play-fill"></i> 获取日志' +
-                    '</button>' +
-                '</div>' +
-                '<div id="test-pm2-logs-area" style="display:none;">' +
-                    '<div style="background:#1e1e1e;color:#d4d4d4;font-family:Consolas,Monaco,monospace;font-size:12px;line-height:1.5;padding:10px;border-radius:6px;height:250px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;" id="test-pm2-logs"></div>' +
-                '</div>' +
-
             '</div>' +
 
             // 日志输出区
@@ -161,71 +162,148 @@ function renderDebugPage() {
     $('.plugin_body').html(html);
 
     // 初始日志
-    _debugLog('SYSTEM', 'PM2 模块测试页面已加载，可以开始测试');
-    _debugLog('INFO', 'PM2 进程名称: ' + Pm2.APP_NAME);
+    _debugLog('SYSTEM', 'SillyTavern 模块测试页面已加载，可以开始测试');
+    _debugLog('INFO', 'GitHub URL: ' + SillyTavern.GITHUB_URL);
+
+    // 初始加载当前路径和安装状态
+    testGetPath();
+    testIsInstalled();
 }
 
 // ======== 测试方法 ========
 
 /**
- * 测试 1: 获取 PM2 版本
+ * 测试 1: 获取 SillyTavern 版本
  */
-function testGetPm2Version() {
-    _debugLog('INFO', '>>> testGetPm2Version()');
-    $('#test-pm2-version').html('<span class="stl-loading"></span>');
+function testGetVersion() {
+    _debugLog('INFO', '>>> testGetVersion()');
+    $('#test-st-version').html('<span class="stl-loading"></span>');
 
-    Pm2.getPm2Version(function (rdata) {
+    SillyTavern.getSillyTavernVersion(function (rdata) {
         if (rdata.status && rdata.version) {
-            _debugLog('SUCCESS', 'PM2 版本: ' + rdata.version);
-            $('#test-pm2-version').html('<span style="color:#20a53a;">' + rdata.version + '</span>');
+            _debugLog('SUCCESS', '版本: v' + rdata.version + ' | 路径: ' + (rdata.path || ''));
+            $('#test-st-version').html(
+                '<span style="color:#20a53a;">v' + rdata.version + '</span>' +
+                '<span style="color:#999;font-size:12px;margin-left:6px;">' + (rdata.path || '') + '</span>'
+            );
         } else {
-            _debugLog('WARN', (rdata.msg || '未检测到 PM2'));
-            $('#test-pm2-version').html('<span style="color:#d9534f;">未检测到</span>');
+            _debugLog('WARN', (rdata.msg || '未检测到 SillyTavern'));
+            $('#test-st-version').html('<span style="color:#d9534f;">' + (rdata.msg || '未检测到') + '</span>');
         }
     });
 }
 
 /**
- * 测试 2: 检测 PM2 是否已安装
+ * 测试 2: 检测 SillyTavern 是否已安装
  */
-function testIsPm2Installed() {
-    _debugLog('INFO', '>>> testIsPm2Installed()');
-    $('#test-pm2-install').html('<span class="stl-loading"></span>');
+function testIsInstalled() {
+    _debugLog('INFO', '>>> testIsInstalled()');
+    $('#test-st-install').html('<span class="stl-loading"></span>');
 
-    Pm2.isPm2Installed(function (rdata) {
+    SillyTavern.isSillyTavernInstall(function (rdata) {
         if (rdata.status && rdata.installed) {
-            _debugLog('SUCCESS', 'PM2 已安装: ' + (rdata.version || ''));
-            $('#test-pm2-install').html('<span style="color:#20a53a;">已安装 (' + (rdata.version || '') + ')</span>');
+            _debugLog('SUCCESS', '已安装: v' + (rdata.version || '') + ' | 路径: ' + (rdata.path || ''));
+            $('#test-st-install').html('<span style="color:#20a53a;">已安装 (v' + (rdata.version || '') + ')</span>');
         } else {
-            _debugLog('WARN', 'PM2 未安装');
-            $('#test-pm2-install').html('<span style="color:#d9534f;">未安装</span>');
+            _debugLog('WARN', '未安装: ' + (rdata.msg || ''));
+            $('#test-st-install').html('<span style="color:#d9534f;">未安装</span>');
         }
     });
 }
 
 /**
- * 测试 3: 智能安装 PM2
+ * 测试 3: 获取当前酒馆路径
  */
-function testAutoInstallPm2() {
-    layer.confirm('确认智能安装 PM2？已安装时将自动跳过。', {
+function testGetPath() {
+    _debugLog('INFO', '>>> testGetPath()');
+    $('#test-st-path').html('<span class="stl-loading"></span>');
+
+    SillyTavern.getStPath(function (rdata) {
+        if (rdata.status) {
+            var label = rdata.is_custom ? '（自定义）' : '（默认）';
+            _debugLog('SUCCESS', '路径: ' + rdata.path + ' ' + label);
+            $('#test-st-path').html(
+                '<span style="color:#20a53a;">' + rdata.path + '</span>' +
+                '<span style="color:#999;font-size:12px;margin-left:6px;">' + label + '</span>'
+            );
+        } else {
+            _debugLog('WARN', (rdata.msg || '获取路径失败'));
+            $('#test-st-path').html('<span style="color:#d9534f;">' + (rdata.msg || '获取失败') + '</span>');
+        }
+    });
+}
+
+/**
+ * 测试 4: 设置自定义路径
+ */
+function testSetPath() {
+    var path = $('#test-set-path-input').val().trim();
+    if (!path) {
+        layer.msg('请输入路径', { icon: 0 });
+        return;
+    }
+
+    _debugLog('INFO', '>>> testSetPath("' + path + '")');
+    $('#test-set-path-result').html('<span class="stl-loading"></span>');
+
+    SillyTavern.setStPath(path, function (rdata) {
+        if (rdata.status) {
+            _debugLog('SUCCESS', rdata.msg + ': ' + rdata.path);
+            $('#test-set-path-result').html('<span style="color:#20a53a;">' + rdata.path + '</span>');
+            layer.msg(rdata.msg, { icon: 1 });
+            testGetPath();
+        } else {
+            _debugLog('ERROR', rdata.msg);
+            $('#test-set-path-result').html('<span style="color:#d9534f;">' + rdata.msg + '</span>');
+            layer.msg(rdata.msg, { icon: 2 });
+        }
+    });
+}
+
+/**
+ * 测试 4.1: 恢复默认路径
+ */
+function testResetPath() {
+    _debugLog('INFO', '>>> testResetPath()');
+    $('#test-set-path-result').html('<span class="stl-loading"></span>');
+
+    SillyTavern.setStPath('', function (rdata) {
+        if (rdata.status) {
+            _debugLog('SUCCESS', rdata.msg + ': ' + rdata.path);
+            $('#test-set-path-result').html('<span style="color:#20a53a;">' + rdata.path + '</span>');
+            layer.msg(rdata.msg, { icon: 1 });
+            testGetPath();
+        } else {
+            _debugLog('ERROR', rdata.msg);
+            $('#test-set-path-result').html('<span style="color:#d9534f;">' + rdata.msg + '</span>');
+            layer.msg(rdata.msg, { icon: 2 });
+        }
+    });
+}
+
+/**
+ * 测试 5: 智能安装 SillyTavern
+ */
+function testAutoInstall() {
+    layer.confirm('确认智能安装 SillyTavern？已安装时将自动跳过。', {
         btn: ['确认', '取消']
     }, function (index) {
         layer.close(index);
-        _debugLog('INFO', '>>> testAutoInstallPm2()');
-        $('#test-auto-install-pm2-btn').prop('disabled', true);
-        $('#test-pm2-progress').html('<span class="stl-loading"></span>');
+        _debugLog('INFO', '>>> testAutoInstall()');
+        $('#test-auto-install-btn').prop('disabled', true);
+        $('#test-st-progress').html('<span class="stl-loading"></span>');
 
         // 打开日志弹窗
-        _openInstallLogLayer('PM2 安装日志');
+        _openInstallLogLayer('SillyTavern 安装日志');
 
-        Pm2.autoInstallPm2(
+        SillyTavern.autoInstallSillyTavern(
             // 完成回调
             function (rdata) {
-                $('#test-auto-install-pm2-btn').prop('disabled', false);
+                $('#test-auto-install-btn').prop('disabled', false);
 
                 if (rdata.status) {
                     _debugLog('SUCCESS', rdata.msg);
-                    $('#test-pm2-progress').html('<span style="color:#20a53a;">完成 (' + (rdata.version || '') + ')</span>');
+                    $('#test-st-progress').html('<span style="color:#20a53a;">完成 (v' + (rdata.version || '') + ')</span>');
                     layer.msg(rdata.msg, { icon: 1 });
                     // 安装成功，3 秒后自动关闭日志弹窗
                     setTimeout(function () {
@@ -234,9 +312,12 @@ function testAutoInstallPm2() {
                             _installLogLayerIndex = null;
                         }
                     }, 3000);
+                    // 刷新状态
+                    testIsInstalled();
+                    testGetPath();
                 } else {
                     _debugLog('ERROR', rdata.msg);
-                    $('#test-pm2-progress').html('<span style="color:#d9534f;">失败</span>');
+                    $('#test-st-progress').html('<span style="color:#d9534f;">失败</span>');
                     layer.msg(rdata.msg || '安装失败', { icon: 2 });
                 }
             },
@@ -247,7 +328,7 @@ function testAutoInstallPm2() {
             },
             // 进度回调
             function (msg) {
-                $('#test-pm2-progress').text(msg);
+                $('#test-st-progress').text(msg);
                 _debugLog('INFO', msg);
             }
         );
@@ -255,161 +336,117 @@ function testAutoInstallPm2() {
 }
 
 /**
- * 测试 4: 获取 SillyTavern 运行状态
+ * 测试 6: 检查更新
  */
-function testGetStatus() {
-    _debugLog('INFO', '>>> testGetStatus()');
-    $('#test-pm2-status').html('<span class="stl-loading"></span>');
+function testCheckUpdate() {
+    _debugLog('INFO', '>>> testCheckUpdate()');
+    $('#test-st-check-update').html('<span class="stl-loading"></span>');
 
-    Pm2.getStatus(function (rdata) {
-        if (rdata.status && rdata.running) {
-            var info = rdata.info || {};
-            _debugLog('SUCCESS', 'SillyTavern 运行中 PID:' + (info.pid || '') + ' 内存:' + _formatMemory(info.memory || 0));
-            $('#test-pm2-status').html(
-                '<span style="color:#20a53a;">运行中</span>' +
-                '<span style="color:#999;font-size:12px;margin-left:6px;">' +
-                    'PID:' + (info.pid || '') +
-                    ' | 重启:' + (info.restarts || 0) +
-                    ' | 内存:' + _formatMemory(info.memory || 0) +
-                '</span>'
-            );
+    SillyTavern.checkUpdate(function (rdata) {
+        if (rdata.status) {
+            if (rdata.is_latest) {
+                _debugLog('SUCCESS', '已是最新版本: v' + (rdata.local_version || '') + ' (' + (rdata.local_commit || '') + ')');
+                $('#test-st-check-update').html(
+                    '<span style="color:#20a53a;">已是最新</span>' +
+                    '<span style="color:#999;font-size:12px;margin-left:6px;">' +
+                        'v' + (rdata.local_version || '') + ' | ' + (rdata.local_commit || '') +
+                    '</span>'
+                );
+            } else {
+                _debugLog('INFO', '有新版本可用: v' + (rdata.local_version || '') + ' (' + (rdata.local_commit || '') + ') → v' + (rdata.remote_version || '') + ' (' + (rdata.remote_commit || '') + ')');
+                $('#test-st-check-update').html(
+                    '<span style="color:#e6a23c;">有更新</span>' +
+                    '<span style="color:#999;font-size:12px;margin-left:6px;">' +
+                        'v' + (rdata.local_version || '') + ' → v' + (rdata.remote_version || '') +
+                    '</span>'
+                );
+            }
         } else {
-            var msg = (rdata && rdata.msg) ? rdata.msg : '未运行';
-            _debugLog('INFO', 'SillyTavern: ' + msg);
-            $('#test-pm2-status').html('<span style="color:#d9534f;">' + msg + '</span>');
+            _debugLog('WARN', (rdata.msg || '检查更新失败'));
+            $('#test-st-check-update').html('<span style="color:#d9534f;">' + (rdata.msg || '检查失败') + '</span>');
         }
     });
 }
 
 /**
- * 测试 5: 启动 SillyTavern
+ * 测试 7: 执行更新
  */
-function testStart() {
-    layer.confirm('确认启动 SillyTavern？', {
+function testUpdate() {
+    layer.confirm('确认更新 SillyTavern？', {
         btn: ['确认', '取消']
     }, function (index) {
         layer.close(index);
-        _debugLog('INFO', '>>> testStart()');
-        $('#test-pm2-start').html('<span class="stl-loading"></span>');
+        _debugLog('INFO', '>>> testUpdate()');
+        $('#test-st-update').html('<span class="stl-loading"></span>');
 
-        Pm2.start(function (rdata) {
-            if (rdata.status) {
-                _debugLog('SUCCESS', rdata.msg);
-                $('#test-pm2-start').html('<span style="color:#20a53a;">已启动</span>');
-                layer.msg(rdata.msg, { icon: 1 });
-                // 启动后自动刷新状态
-                testGetStatus();
-            } else {
-                _debugLog('WARN', rdata.msg);
-                $('#test-pm2-start').html('<span style="color:#d9534f;">失败</span>');
-                layer.msg(rdata.msg, { icon: 2 });
+        // 打开日志弹窗
+        _openInstallLogLayer('SillyTavern 更新日志');
+
+        SillyTavern.updateSillyTavern(
+            // 完成回调
+            function (rdata) {
+                if (rdata.status) {
+                    _debugLog('SUCCESS', rdata.msg);
+                    $('#test-st-update').html(
+                        '<span style="color:#20a53a;">' + rdata.msg + '</span>'
+                    );
+                    layer.msg(rdata.msg, { icon: 1 });
+                    // 更新成功，3 秒后自动关闭日志弹窗
+                    setTimeout(function () {
+                        if (_installLogLayerIndex) {
+                            layer.close(_installLogLayerIndex);
+                            _installLogLayerIndex = null;
+                        }
+                    }, 3000);
+                    // 刷新状态
+                    testGetVersion();
+                    testCheckUpdate();
+                } else {
+                    _debugLog('ERROR', rdata.msg);
+                    $('#test-st-update').html('<span style="color:#d9534f;">失败</span>');
+                    layer.msg(rdata.msg, { icon: 2 });
+                }
+            },
+            // 日志回调
+            function (logText) {
+                _appendToLogLayer(logText);
+                _debugLog('OUTPUT', logText.replace(/\n$/, ''));
+            },
+            // 进度回调
+            function (msg) {
+                $('#test-st-update').text(msg);
+                _debugLog('INFO', msg);
             }
-        });
+        );
     });
 }
 
 /**
- * 测试 6: 停止 SillyTavern
+ * 测试 8: 删除 SillyTavern
  */
-function testStop() {
-    layer.confirm('确认停止 SillyTavern？（进程仍在 PM2 列表中，可重启）', {
-        btn: ['确认', '取消']
-    }, function (index) {
-        layer.close(index);
-        _debugLog('INFO', '>>> testStop()');
-        $('#test-pm2-stop').html('<span class="stl-loading"></span>');
-
-        Pm2.stop(function (rdata) {
-            if (rdata.status) {
-                _debugLog('SUCCESS', rdata.msg);
-                $('#test-pm2-stop').html('<span style="color:#20a53a;">已停止</span>');
-                layer.msg(rdata.msg, { icon: 1 });
-                testGetStatus();
-            } else {
-                _debugLog('ERROR', rdata.msg);
-                $('#test-pm2-stop').html('<span style="color:#d9534f;">失败</span>');
-                layer.msg(rdata.msg, { icon: 2 });
-            }
-        });
-    });
-}
-
-/**
- * 测试 8: 重启 SillyTavern
- */
-function testRestart() {
-    layer.confirm('确认重启 SillyTavern？', {
-        btn: ['确认', '取消']
-    }, function (index) {
-        layer.close(index);
-        _debugLog('INFO', '>>> testRestart()');
-        $('#test-pm2-restart').html('<span class="stl-loading"></span>');
-
-        Pm2.restart(function (rdata) {
-            if (rdata.status) {
-                _debugLog('SUCCESS', rdata.msg);
-                $('#test-pm2-restart').html('<span style="color:#20a53a;">已重启</span>');
-                layer.msg(rdata.msg, { icon: 1 });
-                testGetStatus();
-            } else {
-                _debugLog('ERROR', rdata.msg);
-                $('#test-pm2-restart').html('<span style="color:#d9534f;">失败</span>');
-                layer.msg(rdata.msg, { icon: 2 });
-            }
-        });
-    });
-}
-
-/**
- * 测试 9: 强制停止 SillyTavern（从 PM2 中彻底移除）
- */
-function testForceStop() {
-    layer.confirm('⚠️ 确认强制停止？这将从 PM2 中彻底移除 SillyTavern 进程，需要重新启动才能再次运行。', {
+function testDelete() {
+    layer.confirm('⚠️ 确认删除 SillyTavern？\n\n此操作将停止 PM2 进程并删除整个目录，数据不可恢复！', {
         btn: ['确认', '取消'],
         icon: 3
     }, function (index) {
         layer.close(index);
-        _debugLog('INFO', '>>> testForceStop()');
-        $('#test-pm2-force-stop').html('<span class="stl-loading"></span>');
+        _debugLog('INFO', '>>> testDelete()');
+        $('#test-st-delete').html('<span class="stl-loading"></span>');
 
-        Pm2.forceStop(function (rdata) {
+        SillyTavern.deleteSillyTavern(function (rdata) {
             if (rdata.status) {
                 _debugLog('SUCCESS', rdata.msg);
-                $('#test-pm2-force-stop').html('<span style="color:#20a53a;">已移除</span>');
+                $('#test-st-delete').html('<span style="color:#20a53a;">已删除</span>');
                 layer.msg(rdata.msg, { icon: 1 });
-                testGetStatus();
+                testIsInstalled();
+                testGetPath();
             } else {
                 _debugLog('ERROR', rdata.msg);
-                $('#test-pm2-force-stop').html('<span style="color:#d9534f;">失败</span>');
+                $('#test-st-delete').html('<span style="color:#d9534f;">失败</span>');
                 layer.msg(rdata.msg, { icon: 2 });
             }
         });
     });
-}
-
-/**
- * 测试 7: 获取 SillyTavern 日志
- */
-function testGetLogs() {
-    var type = $('#test-log-type').val();
-    var lines = parseInt($('#test-log-lines').val(), 10) || 100;
-
-    _debugLog('INFO', '>>> testGetLogs(type=' + type + ', lines=' + lines + ')');
-
-    Pm2.getLogs(function (rdata) {
-        var area = $('#test-pm2-logs-area');
-        area.show();
-
-        if (rdata.status && rdata.logs) {
-            _debugLog('SUCCESS', '获取日志成功（' + rdata.logs.split('\n').length + ' 行）');
-            $('#test-pm2-logs').text(rdata.logs);
-            $('#test-pm2-logs').scrollTop($('#test-pm2-logs')[0].scrollHeight);
-        } else {
-            var msg = (rdata && rdata.msg) ? rdata.msg : '获取日志失败';
-            _debugLog('WARN', msg);
-            $('#test-pm2-logs').text(msg);
-        }
-    }, lines, type);
 }
 
 // ======== 日志弹窗 ========
@@ -470,16 +507,6 @@ function _escapeHtml(str) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
-}
-
-// ======== 辅助函数 ========
-
-/**
- * 格式化内存（字节 → MB）
- */
-function _formatMemory(bytes) {
-    if (!bytes) return '0 MB';
-    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
 }
 
 // ======== 调试日志工具 ========
