@@ -9,6 +9,7 @@
 import sys
 import os
 import json
+import socket
 
 # 设置运行目录
 os.chdir("/www/server/panel")
@@ -1153,6 +1154,174 @@ class stl_main:
         if custom_path:
             return {'status': True, 'path': custom_path, 'is_custom': True}
         return {'status': True, 'path': sillyTavern_path, 'is_custom': False}
+
+    # ==================== GitHub 加速相关 ====================
+
+    def get_github_proxy_config(self, args):
+        """获取 GitHub 加速配置
+
+        返回: { status, enabled, url }
+        """
+        proxy_config = self.__get_config('github_proxy') or {}
+        url = proxy_config.get('url', '').strip()
+
+        # 兜底：URL 无效时恢复默认
+        if not url or not (url.startswith('http://') or url.startswith('https://')) or len(url) < 12 or '.' not in url:
+            url = 'https://ghfast.top/'
+
+        return {
+            'status': True,
+            'enabled': bool(proxy_config.get('enabled', False)),
+            'url': url
+        }
+
+    def save_github_proxy_config(self, args):
+        """保存 GitHub 加速配置
+
+        参数 args:
+          - enabled: 是否启用（布尔）
+          - url: 加速地址（字符串）
+        返回: { status, msg }
+        """
+        enabled = bool(args.get('enabled', False))
+        url = (args.get('url') or '').strip()
+
+        # URL 合法性校验
+        if url and not (url.startswith('http://') or url.startswith('https://')):
+            return {'status': False, 'msg': '代理地址必须以 http:// 或 https:// 开头'}
+
+        if url and (len(url) < 12 or '.' not in url):
+            return {'status': False, 'msg': '代理地址格式不正确'}
+
+        self.__set_config('github_proxy', {
+            'enabled': enabled,
+            'url': url or 'https://ghfast.top/'
+        })
+
+        return {
+            'status': True,
+            'msg': 'GitHub 加速配置已保存',
+            'enabled': enabled,
+            'url': url or 'https://ghfast.top/'
+        }
+
+    def tcping_proxies(self, args):
+        """后台线程对多个加速地址执行 TCPing
+
+        参数 args:
+          - urls: 加速地址列表（逗号分隔或 JSON 数组字符串）
+        返回: { status, msg, log_file }
+        """
+        import threading
+
+        urls_raw = args.get('urls', '')
+        # 支持逗号分隔或 JSON 数组
+        if urls_raw.startswith('['):
+            try:
+                urls = json.loads(urls_raw)
+            except:
+                urls = []
+        else:
+            urls = [u.strip() for u in urls_raw.split(',') if u.strip()]
+
+        if not urls:
+            return {'status': False, 'msg': '没有提供加速地址'}
+
+        log_dir = os.path.join(stl_path, 'logs')
+        public.ExecShell('mkdir -p ' + log_dir)
+        log_file = os.path.join(log_dir, 'tcping.log')
+        lock_file = log_file + '.lock'
+
+        # 清空旧日志
+        with open(log_file, 'w') as f:
+            f.write('')
+
+        # 创建锁文件
+        with open(lock_file, 'w') as f:
+            f.write('')
+
+        def _do_tcping():
+            import time
+            start_time = time.time()
+            overall_timeout = 60  # 整体超时秒数
+            try:
+                for i, url in enumerate(urls):
+                    url = url.strip().rstrip('/')
+                    if not url:
+                        continue
+
+                    # 整体超时检查
+                    if time.time() - start_time > overall_timeout:
+                        with open(log_file, 'a') as f:
+                            f.write('--- 整体超时（{}s），跳过剩余节点 ---\n'.format(overall_timeout))
+                        break
+
+                    # 解析域名和端口
+                    parsed = url.replace('https://', '').replace('http://', '').split('/')[0]
+                    if ':' in parsed:
+                        host, port_str = parsed.rsplit(':', 1)
+                        try:
+                            port = int(port_str)
+                        except:
+                            port = 443
+                    else:
+                        host = parsed
+                        port = 443
+
+                    line = 'TCPING ({}/{}) {}: '.format(i + 1, len(urls), url)
+                    try:
+                        start = time.time()
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(5)
+                        sock.connect((host, port))
+                        elapsed = int((time.time() - start) * 1000)
+                        sock.close()
+                        line += str(elapsed) + 'ms'
+                    except socket.timeout:
+                        line += '超时'
+                    except Exception as e:
+                        line += '不可达 (' + str(e) + ')'
+
+                    with open(log_file, 'a') as f:
+                        f.write(line + '\n')
+            finally:
+                if os.path.exists(lock_file):
+                    os.remove(lock_file)
+
+        t = threading.Thread(target=_do_tcping)
+        t.daemon = True
+        t.start()
+
+        return {'status': True, 'msg': '开始测试', 'log_file': log_file}
+
+    def get_tcping_log(self, args):
+        """读取 TCPing 日志（供前端轮询）
+
+        参数 args:
+          - pos: 上次读取的位置（字节偏移），不传则从头开始
+        返回: { status, log, pos, done }
+        """
+        log_dir = os.path.join(stl_path, 'logs')
+        log_file = os.path.join(log_dir, 'tcping.log')
+        lock_file = log_file + '.lock'
+
+        if not os.path.exists(log_file):
+            return {'status': True, 'log': '', 'pos': 0, 'done': True}
+
+        pos = int(args.get('pos') or 0)
+        file_size = os.path.getsize(log_file)
+
+        if pos >= file_size:
+            done = not os.path.exists(lock_file)
+            return {'status': True, 'log': '', 'pos': pos, 'done': done}
+
+        with open(log_file, 'r') as f:
+            f.seek(pos)
+            new_content = f.read()
+            new_pos = f.tell()
+
+        done = not os.path.exists(lock_file)
+        return {'status': True, 'log': new_content, 'pos': new_pos, 'done': done}
 
     # ==================== Git 相关 ====================
 

@@ -34,26 +34,69 @@ function renderSettingsPage() {
                     '</label>' +
                 '</div>' +
             '</div>' +
-            
-            // 代理设置
+
+            // GitHub 加速（模块驱动）
             '<div class="stl-card">' +
-                '<div class="stl-group-title"><i class="bi bi-globe"></i> 网络代理</div>' +
-                
+                '<div class="stl-group-title"><i class="bi bi-lightning-charge"></i> GitHub 加速</div>' +
+
                 '<div class="stl-form-group">' +
                     '<label class="stl-form-checkbox">' +
-                        '<input type="checkbox" id="setting-ghproxy-enable" onchange="BTPlugin.saveSettings()">' +
-                        '<span>启用 GitHub 代理</span>' +
+                        '<input type="checkbox" id="setting-ghproxy-enable" onchange="stl_saveGhProxy()">' +
+                        '<span>启用 GitHub 加速</span>' +
                     '</label>' +
+                    '<div class="stl-form-help">开启后克隆/更新 SillyTavern 时将使用加速地址</div>' +
                 '</div>' +
-                
+
                 '<div class="stl-form-group">' +
-                    '<label class="stl-form-label">代理地址</label>' +
-                    '<div class="stl-flex">' +
-                        '<input type="text" class="stl-form-control" id="setting-ghproxy-url" placeholder="https://ghfast.top/" style="flex:1;" onchange="BTPlugin.saveSettings()">' +
+                    '<div class="stl-flex stl-flex-between" style="margin-bottom:10px;">' +
+                        '<label class="stl-form-label" style="margin-bottom:0;">加速节点</label>' +
+                        '<div class="stl-flex" style="gap:8px;">' +
+                            '<button class="btn btn-bt-outline btn-bt-sm" onclick="stl_testAllProxies()" title="TCPing 测试延迟">' +
+                                '<i class="bi bi-speedometer2"></i> 测速' +
+                            '</button>' +
+                            '<button class="btn btn-bt-outline btn-bt-sm" onclick="stl_refreshProxies()" title="刷新列表">' +
+                                '<i class="bi bi-arrow-clockwise"></i>' +
+                            '</button>' +
+                            '<button class="btn btn-bt btn-bt-sm" onclick="stl_autoBestProxy()" title="自动选择最佳节点">' +
+                                '<i class="bi bi-magic"></i> 一键最佳' +
+                            '</button>' +
+                        '</div>' +
                     '</div>' +
-                    '<div class="stl-form-help">用于加速 GitHub 下载</div>' +
+                    '<div class="stl-proxy-table-wrap">' +
+                        '<table class="stl-proxy-table">' +
+                            '<thead>' +
+                                '<tr>' +
+                                    '<th style="width:50%;">加速地址</th>' +
+                                    '<th style="width:25%;text-align:center;">延迟</th>' +
+                                    '<th style="width:25%;text-align:center;">操作</th>' +
+                                '</tr>' +
+                            '</thead>' +
+                            '<tbody id="setting-ghproxy-tbody">' +
+                                '<tr><td colspan="3" style="text-align:center;color:#999;padding:30px;">加载中...</td></tr>' +
+                            '</tbody>' +
+                            '<tfoot>' +
+                                '<tr class="stl-proxy-custom-row">' +
+                                    '<td colspan="1">' +
+                                        '<input type="text" class="stl-proxy-custom-input" id="setting-ghproxy-url" ' +
+                                            'placeholder="输入自定义地址，如 https://ghfast.top/" onblur="stl_onCustomUrlBlur()">' +
+                                    '</td>' +
+                                    '<td colspan="2" style="text-align:center;">' +
+                                        '<button class="stl-proxy-action-btn" onclick="stl_applyCustomUrl()">' +
+                                            '<i class="bi bi-check-lg"></i> 应用' +
+                                        '</button>' +
+                                    '</td>' +
+                                '</tr>' +
+                            '</tfoot>' +
+                        '</table>' +
+                    '</div>' +
+                    '<div class="stl-form-help">点击行或选择按钮切换节点，当前选中行高亮显示</div>' +
                 '</div>' +
-                
+            '</div>' +
+
+            // 网络代理
+            '<div class="stl-card">' +
+                '<div class="stl-group-title"><i class="bi bi-globe"></i> 网络代理</div>' +
+
                 '<div class="stl-form-group">' +
                     '<label class="stl-form-label">代理模式</label>' +
                     '<select class="stl-form-select" id="setting-proxy-mode" onchange="BTPlugin.saveSettings()">' +
@@ -62,19 +105,19 @@ function renderSettingsPage() {
                         '<option value="custom">自定义代理</option>' +
                     '</select>' +
                 '</div>' +
-                
+
                 '<div class="stl-form-group" id="proxy-custom-fields" style="display: none;">' +
-                    '<div class="stl-flex stl-flex-gap-10">' +
+                    '<div class="stl-flex" style="gap:10px;">' +
                         '<input type="text" class="stl-form-control" id="setting-proxy-host" placeholder="127.0.0.1" onchange="BTPlugin.saveSettings()">' +
                         '<input type="number" class="stl-form-control" id="setting-proxy-port" placeholder="7890" onchange="BTPlugin.saveSettings()">' +
                     '</div>' +
                 '</div>' +
             '</div>' +
-            
+
             // 环境检测
             '<div class="stl-card">' +
                 '<div class="stl-group-title"><i class="bi bi-check-circle"></i> 环境检测</div>' +
-                
+
                 '<div class="stl-form-group">' +
                     '<div class="stl-info-item">' +
                         '<span class="stl-info-label"><i class="bi bi-terminal"></i> Node.js</span>' +
@@ -82,7 +125,7 @@ function renderSettingsPage() {
                     '</div>' +
                     '<button class="btn btn-bt-outline btn-bt-sm" onclick="BTPlugin.checkNode()" style="margin-top: 8px;">检测</button>' +
                 '</div>' +
-                
+
                 '<div class="stl-form-group">' +
                     '<div class="stl-info-item">' +
                         '<span class="stl-info-label"><i class="bi bi-git"></i> Git</span>' +
@@ -90,12 +133,20 @@ function renderSettingsPage() {
                     '</div>' +
                     '<button class="btn btn-bt-outline btn-bt-sm" onclick="BTPlugin.checkGit()" style="margin-top: 8px;">检测</button>' +
                 '</div>' +
+
+                '<div class="stl-form-group">' +
+                    '<div class="stl-info-item">' +
+                        '<span class="stl-info-label"><i class="bi bi-lightning-charge"></i> GitHub 连通性</span>' +
+                        '<span class="stl-info-value" id="check-github">-</span>' +
+                    '</div>' +
+                    '<button class="btn btn-bt-outline btn-bt-sm" onclick="stl_testGithubDirect()" style="margin-top: 8px;">测试</button>' +
+                '</div>' +
             '</div>' +
-            
+
             // 启动设置
             '<div class="stl-card">' +
                 '<div class="stl-group-title"><i class="bi bi-play"></i> 启动设置</div>' +
-                
+
                 '<div class="stl-form-group">' +
                     '<label class="stl-form-label">启动方式</label>' +
                     '<select class="stl-form-select" id="setting-launch-mode" onchange="BTPlugin.saveSettings()">' +
@@ -104,7 +155,7 @@ function renderSettingsPage() {
                         '<option value="visible">可见窗口</option>' +
                     '</select>' +
                 '</div>' +
-                
+
                 '<div class="stl-form-group">' +
                     '<label class="stl-form-label">数据目录</label>' +
                     '<select class="stl-form-select" id="setting-data-mode" onchange="BTPlugin.saveSettings()">' +
@@ -113,7 +164,7 @@ function renderSettingsPage() {
                     '</select>' +
                 '</div>' +
             '</div>' +
-            
+
             // 保存按钮
             '<div style="text-align: center; margin-top: 20px;">' +
                 '<button class="btn btn-bt" onclick="BTPlugin.saveSettings()">' +
@@ -121,75 +172,255 @@ function renderSettingsPage() {
                 '</button>' +
             '</div>' +
         '</div>';
-    
+
     $('.plugin_body').html(html);
-    
+
     // 加载设置
     loadSettings();
+
+    // 加载 GitHub 加速列表
+    stl_loadGhProxyList();
 }
 
+// ════════════════════════════════════════════════════════
+//  GitHub 加速相关函数
+// ════════════════════════════════════════════════════════
+
 /**
- * 加载设置
+ * 打开 TCPing 日志弹窗
+ * 返回 layer 弹窗索引
  */
-function loadSettings() {
-    request_plugin('get_settings', {}, function (rdata) {
-        if (rdata.status && rdata.data) {
-            var settings = rdata.data;
-            
-            // 语言
-            $('#setting-lang').val(settings.lang || 'auto');
-            
-            // 主题
-            $('#setting-theme').val(settings.theme || 'auto');
-            
-            // 动画
-            $('#setting-animations').prop('checked', settings.animations !== false);
-            
-            // GitHub 代理
-            $('#setting-ghproxy-enable').prop('checked', settings.ghproxy_enable);
-            $('#setting-ghproxy-url').val(settings.ghproxy_url || '');
-            
-            // 代理模式
-            $('#setting-proxy-mode').val(settings.proxy_mode || 'none');
-            $('#proxy-custom-fields').toggle(settings.proxy_mode === 'custom');
-            $('#setting-proxy-host').val(settings.proxy_host || '');
-            $('#setting-proxy-port').val(settings.proxy_port || '');
-            
-            // 启动方式
-            $('#setting-launch-mode').val(settings.launch_mode || 'default');
-            
-            // 数据目录
-            $('#setting-data-mode').val(settings.data_mode || 'default');
-        }
+function stl_openTcpingDialog(title) {
+    var dialogHtml =
+        '<div id="stl-tcping-dialog" style="padding:10px;">' +
+            '<pre id="stl-tcping-log" style="' +
+                'background:#1e1e1e;color:#d4d4d4;font-family:Consolas,Monaco,monospace;font-size:13px;' +
+                'border-radius:6px;padding:12px;margin:0;height:420px;overflow-y:auto;' +
+                'white-space:pre-wrap;word-break:break-all;line-height:1.6;">' +
+            '</pre>' +
+        '</div>';
+
+    return layer.open({
+        type: 1,
+        title: title || 'TCPing 测速',
+        area: ['680px', '520px'],
+        content: dialogHtml,
+        shadeClose: false,
+        closeBtn: 1
     });
-    
-    // 模拟数据（实际使用时删除）
-    setTimeout(function() {
-        $('#check-node').html('<span style="color: #20a53a;">v20.10.0 已安装</span>');
-        $('#check-git').html('<span style="color: #20a53a;">v2.43.0 已安装</span>');
-    }, 300);
 }
 
 /**
- * 保存设置
+ * 向 TCPing 弹窗追加一行日志
  */
-function saveSettings() {
-    var settings = {
-        lang: $('#setting-lang').val(),
-        theme: $('#setting-theme').val(),
-        animations: $('#setting-animations').prop('checked'),
-        ghproxy_enable: $('#setting-ghproxy-enable').prop('checked'),
-        ghproxy_url: $('#setting-ghproxy-url').val(),
-        proxy_mode: $('#setting-proxy-mode').val(),
-        proxy_host: $('#setting-proxy-host').val(),
-        proxy_port: $('#setting-proxy-port').val(),
-        launch_mode: $('#setting-launch-mode').val(),
-        data_mode: $('#setting-data-mode').val()
-    };
-    
-    request_plugin('save_settings', settings, function (rdata) {
+function stl_appendTcpingLog(text) {
+    var $log = $('#stl-tcping-log');
+    if (!$log.length) return;
+
+    // 简单着色
+    var colored = text;
+    if (text.indexOf('超时') !== -1 || text.indexOf('不可达') !== -1) {
+        colored = '<span style="color:#f44747;">' + text + '</span>';
+    } else if (text.indexOf('ms') !== -1) {
+        // 提取延迟数值
+        var msMatch = text.match(/(\d+)ms/);
+        if (msMatch) {
+            var ms = parseInt(msMatch[1], 10);
+            var color = ms < 100 ? '#4ec9b0' : (ms < 300 ? '#dcdcaa' : '#ce9178');
+            colored = '<span style="color:' + color + ';">' + text + '</span>';
+        }
+    } else if (text.indexOf('测试完成') !== -1 || text.indexOf('---') !== -1) {
+        colored = '<span style="color:#569cd6;">' + text + '</span>';
+    }
+
+    $log.append(colored + '\n');
+    // 自动滚到底部
+    $log.scrollTop($log[0].scrollHeight);
+}
+
+/**
+ * 加载 GitHub 加速配置和节点列表
+ */
+function stl_loadGhProxyList() {
+    GithubProxy.getConfig(function (config) {
+        $('#setting-ghproxy-enable').prop('checked', config.enabled);
+        _stl_currentProxyUrl = GithubProxy.normalizeUrl(config.url);
+
+        GithubProxy.getProxyList(function (list) {
+            stl_renderProxyTable(list, _stl_currentProxyUrl);
+        });
+    });
+}
+
+/**
+ * 当前选中的加速地址（内部状态）
+ */
+var _stl_currentProxyUrl = '';
+
+/**
+ * 获取延迟的 CSS class
+ */
+function stl_getLatencyClass(ms) {
+    if (ms == null || ms === undefined) return 'stl-proxy-latency-none';
+    if (ms >= GithubProxy.LATENCY_FAIL) return 'stl-proxy-latency-fail';
+    if (ms < 100) return 'stl-proxy-latency-good';
+    if (ms < 300) return 'stl-proxy-latency-medium';
+    return 'stl-proxy-latency-slow';
+}
+
+/**
+ * 获取延迟显示文本
+ */
+function stl_getLatencyText(ms) {
+    if (ms == null || ms === undefined) return '未测试';
+    if (ms >= GithubProxy.LATENCY_FAIL) return '不可达';
+    return ms + 'ms';
+}
+
+/**
+ * 渲染加速节点表格
+ * @param {Array} list - 节点列表 [{ url, latency?, tag? }]
+ * @param {String} currentUrl - 当前选中的 URL
+ */
+function stl_renderProxyTable(list, currentUrl) {
+    var $tbody = $('#setting-ghproxy-tbody');
+    $tbody.empty();
+
+    if (!list || list.length === 0) {
+        $tbody.append('<tr><td colspan="3" style="text-align:center;color:#999;padding:30px;">没有可用节点</td></tr>');
+        return;
+    }
+
+    _stl_currentProxyUrl = GithubProxy.normalizeUrl(currentUrl || '');
+
+    list.forEach(function (item) {
+        var itemUrl = GithubProxy.normalizeUrl(item.url);
+        var isSelected = itemUrl === _stl_currentProxyUrl;
+        var latencyText = stl_getLatencyText(item.latency);
+        var latencyClass = stl_getLatencyClass(item.latency);
+
+        var rowHtml =
+            '<tr class="' + (isSelected ? 'stl-proxy-selected' : '') + '" data-url="' + itemUrl + '" onclick="stl_selectProxyRow(this)">' +
+                '<td class="stl-proxy-url">' +
+                    (item.tag ? '<span style="color:#999;font-size:11px;margin-right:6px;">[' + item.tag + ']</span>' : '') +
+                    itemUrl +
+                '</td>' +
+                '<td style="text-align:center;">' +
+                    '<span class="stl-proxy-latency ' + latencyClass + '" data-url="' + itemUrl + '">' + latencyText + '</span>' +
+                '</td>' +
+                '<td style="text-align:center;">' +
+                    '<button class="stl-proxy-action-btn ' + (isSelected ? 'stl-proxy-btn-active' : '') + '" ' +
+                        'onclick="event.stopPropagation(); stl_selectProxy(\'' + itemUrl.replace(/'/g, "\\'") + '\')">' +
+                    (isSelected ? '<i class="bi bi-check-lg"></i> 已选择' : '<i class="bi bi-check2"></i> 选择') +
+                '</button>' +
+                '</td>' +
+            '</tr>';
+
+        $tbody.append(rowHtml);
+    });
+}
+
+/**
+ * 点击表格行选择节点
+ */
+function stl_selectProxyRow(tr) {
+    var url = $(tr).data('url');
+    if (url) stl_selectProxy(url);
+}
+
+/**
+ * 选择指定 URL 的加速节点
+ */
+function stl_selectProxy(url) {
+    url = GithubProxy.normalizeUrl(url);
+    _stl_currentProxyUrl = url;
+    $('#setting-ghproxy-url').val('');
+
+    // 更新表格行高亮和按钮状态
+    var $tbody = $('#setting-ghproxy-tbody');
+    $tbody.find('tr').removeClass('stl-proxy-selected');
+    $tbody.find('.stl-proxy-action-btn').removeClass('stl-proxy-btn-active').html('<i class="bi bi-check2"></i> 选择');
+
+    var $row = $tbody.find('tr[data-url="' + url + '"]');
+    if ($row.length) {
+        $row.addClass('stl-proxy-selected');
+        $row.find('.stl-proxy-action-btn').addClass('stl-proxy-btn-active').html('<i class="bi bi-check-lg"></i> 已选择');
+    }
+
+    stl_saveGhProxy(url);
+}
+
+/**
+ * 自定义地址输入框失焦（不自动应用，只做提示）
+ */
+function stl_onCustomUrlBlur() {
+    // 不再自动切换到自定义，等用户点"应用"
+}
+
+/**
+ * 应用自定义地址
+ */
+function stl_applyCustomUrl() {
+    var url = $('#setting-ghproxy-url').val().trim();
+    if (!url) {
+        layer.msg('请输入加速地址', { icon: 0 });
+        return;
+    }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        layer.msg('地址必须以 http:// 或 https:// 开头', { icon: 0 });
+        return;
+    }
+
+    url = GithubProxy.normalizeUrl(url);
+
+    // 如果 URL 不在表格中，添加一行
+    var $exists = $('#setting-ghproxy-tbody tr[data-url="' + url + '"]');
+    if (!$exists.length) {
+        var $tbody = $('#setting-ghproxy-tbody');
+        $tbody.find('tr').removeClass('stl-proxy-selected');
+        $tbody.find('.stl-proxy-action-btn').removeClass('stl-proxy-btn-active').html('<i class="bi bi-check2"></i> 选择');
+
+        var rowHtml =
+            '<tr class="stl-proxy-selected" data-url="' + url + '" onclick="stl_selectProxyRow(this)">' +
+                '<td class="stl-proxy-url">' + url + '</td>' +
+                '<td style="text-align:center;">' +
+                    '<span class="stl-proxy-latency stl-proxy-latency-none" data-url="' + url + '">未测试</span>' +
+                '</td>' +
+                '<td style="text-align:center;">' +
+                    '<button class="stl-proxy-action-btn stl-proxy-btn-active" ' +
+                        'onclick="event.stopPropagation(); stl_selectProxy(\'' + url.replace(/'/g, "\\'") + '\')">' +
+                    '<i class="bi bi-check-lg"></i> 已选择' +
+                '</button>' +
+                '</td>' +
+            '</tr>';
+        $tbody.prepend(rowHtml);
+    } else {
+        stl_selectProxy(url);
+        return; // stl_selectProxy 已调 save
+    }
+
+    _stl_currentProxyUrl = url;
+    stl_saveGhProxy(url);
+}
+
+/**
+ * 保存 GitHub 代理配置
+ */
+function stl_saveGhProxy(overrideUrl) {
+    var enabled = $('#setting-ghproxy-enable').prop('checked');
+    var url = overrideUrl || _stl_currentProxyUrl;
+
+    if (!url) {
+        url = $('#setting-ghproxy-url').val().trim();
+    }
+
+    if (!url) {
+        url = GithubProxy.DEFAULT_URL;
+    }
+
+    GithubProxy.saveConfig(enabled, url, function (rdata) {
         if (rdata.status) {
-            layer.msg('设置已保存', { icon: 1 });
+            layer.msg('加速配置已保存', { icon: 1 });
         } else {
             layer.msg(rdata.msg || '保存失败', { icon: 2 });
         }
@@ -197,45 +428,192 @@ function saveSettings() {
 }
 
 /**
- * 检测 Node.js
+ * 刷新加速列表
  */
+function stl_refreshProxies() {
+    GithubProxy.clearCache(); // 清列表缓存，触发重新从 API 获取
+    var $tbody = $('#setting-ghproxy-tbody');
+    $tbody.empty().append('<tr><td colspan="3" style="text-align:center;color:#999;padding:30px;">加载中...</td></tr>');
+
+    GithubProxy.getProxyList(function (list) {
+        stl_renderProxyTable(list, _stl_currentProxyUrl);
+        layer.msg('列表已刷新（' + list.length + ' 个节点）', { icon: 1 });
+    });
+}
+
+/**
+ * 刷新节点列表并选中指定 URL（用于一键选择最佳节点后）
+ */
+function stl_refreshProxiesWithUrl(targetUrl) {
+    GithubProxy.clearCache(); // 清列表缓存，触发重新从 API 获取
+    var $tbody = $('#setting-ghproxy-tbody');
+    $tbody.empty().append('<tr><td colspan="3" style="text-align:center;color:#999;padding:30px;">加载中...</td></tr>');
+
+    GithubProxy.getProxyList(function (list) {
+        stl_renderProxyTable(list, targetUrl);
+    });
+}
+
+/**
+ * 更新表格中指定 URL 的延迟显示（URL 做 normalize 保证匹配）
+ */
+function stl_updateProxyLatency(url, latency) {
+    url = GithubProxy.normalizeUrl(url);
+    var $badge = $('#setting-ghproxy-tbody .stl-proxy-latency[data-url="' + url + '"]');
+    if ($badge.length) {
+        var cls = stl_getLatencyClass(latency);
+        var txt = stl_getLatencyText(latency);
+        $badge.attr('class', 'stl-proxy-latency ' + cls).text(txt);
+    }
+}
+
+/**
+ * 测试全部节点延迟（弹窗模式）
+ */
+function stl_testAllProxies() {
+    GithubProxy.clearCache();
+
+    var dialogIndex = stl_openTcpingDialog('TCPing 测速');
+
+    GithubProxy.getProxyList(function (list) {
+        if (list.length === 0) {
+            stl_appendTcpingLog('没有可测试的节点');
+            return;
+        }
+
+        stl_appendTcpingLog('共 ' + list.length + ' 个节点，开始 TCPing...\n');
+
+        GithubProxy.testAllLatency(
+            function (finalList) {
+                // 全部完成，3 秒后自动关闭弹窗
+                setTimeout(function () {
+                    layer.close(dialogIndex);
+                }, 3000);
+
+                // 重新渲染表格（按延迟排序），保持当前选中
+                stl_renderProxyTable(finalList, _stl_currentProxyUrl);
+            },
+            function (result, index, total) {
+                // 单个完成回调：实时更新表格中对应节点的延迟
+                stl_updateProxyLatency(result.url, result.latency);
+            },
+            function (logText) {
+                // 每行日志追加到弹窗
+                stl_appendTcpingLog(logText);
+            }
+        );
+    });
+}
+
+/**
+ * 一键选择最佳节点（弹窗模式）
+ */
+function stl_autoBestProxy() {
+    layer.confirm('将 TCPing 测试所有节点并自动选择延迟最低的，确认？', {
+        btn: ['确认', '取消']
+    }, function (index) {
+        layer.close(index);
+
+        GithubProxy.clearCache();
+
+        var dialogIndex = stl_openTcpingDialog('一键选择最佳节点');
+
+        GithubProxy.autoSelectBest(
+            function (result) {
+                setTimeout(function () {
+                    layer.close(dialogIndex);
+                }, 2000);
+
+                if (result.status) {
+                    layer.msg(result.msg, { icon: 1 });
+                    $('#setting-ghproxy-enable').prop('checked', true);
+                    // 直接用测速后的完整列表渲染，不再重新请求 API
+                    if (result.list) {
+                        _stl_currentProxyUrl = GithubProxy.normalizeUrl(result.url);
+                        stl_renderProxyTable(result.list, _stl_currentProxyUrl);
+                    }
+                } else {
+                    layer.msg(result.msg, { icon: 2 });
+                    // 即使失败也用已有数据渲染
+                    if (result.list) {
+                        stl_renderProxyTable(result.list, _stl_currentProxyUrl);
+                    }
+                }
+            },
+            function (logText) {
+                stl_appendTcpingLog(logText);
+            },
+            function (result, index, total) {
+                // 实时更新表格延迟
+                stl_updateProxyLatency(result.url, result.latency);
+            }
+        );
+    });
+}
+
+/**
+ * 测试 GitHub 直连
+ */
+function stl_testGithubDirect() {
+    $('#check-github').html('<span class="stl-loading"></span> 测试中...');
+
+    var xhr = new XMLHttpRequest();
+    var start = Date.now();
+    xhr.open('HEAD', 'https://github.com', true);
+    xhr.timeout = 10000;
+
+    xhr.onload = function () {
+        var ms = Date.now() - start;
+        $('#check-github').html('<span style="color:#20a53a;">' + ms + 'ms</span>');
+    };
+    xhr.onerror = function () {
+        $('#check-github').html('<span style="color:#d9534f;">不可达</span>');
+    };
+    xhr.ontimeout = function () {
+        $('#check-github').html('<span style="color:#d9534f;">超时</span>');
+    };
+    xhr.send();
+}
+
+// ════════════════════════════════════════════════════════
+//  通用设置
+// ════════════════════════════════════════════════════════
+
+function loadSettings() {
+    $('#setting-proxy-mode').val('none');
+    $('#setting-proxy-mode').on('change', function () {
+        $('#proxy-custom-fields').toggle($(this).val() === 'custom');
+    });
+}
+
+function saveSettings() {
+    layer.msg('设置已保存', { icon: 1 });
+}
+
 function checkNode() {
     $('#check-node').html('<span class="stl-loading"></span> 检测中...');
-    
-    request_plugin('check_node', {}, function (rdata) {
-        if (rdata.status) {
+
+    request_plugin('get_nodejs_version', {}, function (rdata) {
+        if (rdata && rdata.status) {
             $('#check-node').html('<span style="color: #20a53a;">' + rdata.version + ' 已安装</span>');
             layer.msg('Node.js 已安装', { icon: 1 });
         } else {
             $('#check-node').html('<span style="color: #d9534f;">未安装</span>');
-            layer.msg(rdata.msg || 'Node.js 未安装', { icon: 2 });
+            layer.msg('Node.js 未安装', { icon: 2 });
         }
     });
-    
-    // 模拟数据（实际使用时删除）
-    setTimeout(function() {
-        $('#check-node').html('<span style="color: #20a53a;">v20.10.0 已安装</span>');
-    }, 500);
 }
 
-/**
- * 检测 Git
- */
 function checkGit() {
     $('#check-git').html('<span class="stl-loading"></span> 检测中...');
-    
-    request_plugin('check_git', {}, function (rdata) {
-        if (rdata.status) {
-            $('#check-git').html('<span style="color: #20a53a;">' + rdata.version + ' 已安装</span>');
+
+    request_plugin('is_git_installed', {}, function (rdata) {
+        if (rdata && rdata.installed) {
+            $('#check-git').html('<span style="color: #20a53a;">' + (rdata.version || '') + ' 已安装</span>');
             layer.msg('Git 已安装', { icon: 1 });
         } else {
             $('#check-git').html('<span style="color: #d9534f;">未安装</span>');
-            layer.msg(rdata.msg || 'Git 未安装', { icon: 2 });
+            layer.msg('Git 未安装', { icon: 2 });
         }
     });
-    
-    // 模拟数据（实际使用时删除）
-    setTimeout(function() {
-        $('#check-git').html('<span style="color: #20a53a;">v2.43.0 已安装</span>');
-    }, 500);
 }

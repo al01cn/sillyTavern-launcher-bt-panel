@@ -733,6 +733,145 @@ body {
     100% { transform: rotate(360deg); }
 }
 
+/* GitHub 加速地址表格 */
+.stl-proxy-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.stl-proxy-table thead th {
+    background: #f5f6f7;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #666;
+    border-bottom: 2px solid #e5e5e5;
+    font-size: 12px;
+}
+
+.stl-proxy-table tbody tr {
+    cursor: pointer;
+    transition: all 0.15s;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.stl-proxy-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+.stl-proxy-table tbody tr.stl-proxy-selected {
+    background: #e8f5e9;
+    border-color: #c8e6c9;
+}
+
+.stl-proxy-table tbody tr.stl-proxy-selected td {
+    color: #1a8c31;
+}
+
+.stl-proxy-table td {
+    padding: 10px 12px;
+    vertical-align: middle;
+}
+
+.stl-proxy-table .stl-proxy-url {
+    font-family: Consolas, Monaco, monospace;
+    font-size: 12px;
+    word-break: break-all;
+    color: #333;
+    max-width: 320px;
+}
+
+.stl-proxy-table .stl-proxy-selected .stl-proxy-url {
+    color: #1a8c31;
+    font-weight: 600;
+}
+
+.stl-proxy-latency {
+    display: inline-block;
+    min-width: 60px;
+    text-align: center;
+    padding: 3px 10px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.stl-proxy-latency-good {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.stl-proxy-latency-medium {
+    background: #fff8e1;
+    color: #f57f17;
+}
+
+.stl-proxy-latency-slow {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+.stl-proxy-latency-fail {
+    background: #ffebee;
+    color: #c62828;
+}
+
+.stl-proxy-latency-none {
+    background: #f5f5f5;
+    color: #999;
+}
+
+.stl-proxy-action-btn {
+    padding: 4px 14px;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 1px solid #ddd;
+    background: #fff;
+    color: #666;
+    transition: all 0.15s;
+}
+
+.stl-proxy-action-btn:hover {
+    border-color: var(--bt-primary);
+    color: var(--bt-primary);
+    background: #f0f7f1;
+}
+
+.stl-proxy-action-btn.stl-proxy-btn-active {
+    background: var(--bt-primary);
+    border-color: var(--bt-primary);
+    color: #fff;
+}
+
+.stl-proxy-table-wrap {
+    max-height: 380px;
+    overflow-y: auto;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+}
+
+/* 自定义地址行 */
+.stl-proxy-custom-row td {
+    padding: 8px 12px;
+    background: #fafafa;
+}
+
+.stl-proxy-custom-input {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: Consolas, Monaco, monospace;
+}
+
+.stl-proxy-custom-input:focus {
+    outline: none;
+    border-color: var(--bt-primary);
+}
+
 /* 滚动条 */
 .stl-console::-webkit-scrollbar {
     width: 8px;
