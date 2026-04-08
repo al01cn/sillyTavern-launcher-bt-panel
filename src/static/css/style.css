@@ -944,3 +944,149 @@ button.stl-mode-btn.active:hover {
 button.stl-mode-btn.active i {
     color: var(--bt-primary) !important;
 }
+
+/* ═══════════════════════════════════════════════════════
+   GitHub 连通性测试弹窗
+   ═══════════════════════════════════════════════════════ */
+
+.stl-github-test-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.stl-github-test-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-radius: 6px;
+    background: #f8f9fa;
+    border: 1px solid #eee;
+    transition: all 0.25s ease;
+}
+
+.stl-github-test-item.stl-github-test-testing {
+    border-color: #91d5ff;
+    background: #e6f7ff;
+}
+
+.stl-github-test-item.stl-github-test-success {
+    border-color: #b7eb8f;
+    background: #f6ffed;
+}
+
+/* 加速地址可用但该资源无法加速（403/404 等），黄色警告态 */
+.stl-github-test-item.stl-github-test-warn {
+    border-color: #ffe58f;
+    background: #fffbe6;
+}
+
+.stl-github-test-item.stl-github-test-fail {
+    border-color: #ffa39e;
+    background: #fff2f0;
+}
+
+.stl-github-test-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.stl-github-test-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+}
+
+.stl-github-test-url {
+    font-size: 11px;
+    color: #999;
+    font-family: Consolas, Monaco, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 260px;
+}
+
+.stl-github-test-status {
+    text-align: right;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-left: 12px;
+}
+
+.stl-github-test-wait {
+    font-size: 12px;
+    color: #bbb;
+}
+
+.stl-github-test-loading {
+    font-size: 12px;
+    color: #1890ff;
+}
+
+.stl-github-test-latency-good {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #52c41a;
+    background: #f6ffed;
+    border: 1px solid #b7eb8f;
+}
+
+/* 部分成功时的延迟标签（黄色主题） */
+.stl-github-test-latency-warn {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #d48806;
+    background: #fffbe6;
+    border: 1px solid #ffe58f;
+}
+
+.stl-github-test-warning {
+    display: block;
+    font-size: 11px;
+    color: #faad14;
+    margin-top: 2px;
+}
+
+.stl-github-test-error {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ff4d4f;
+    background: #fff2f0;
+    border: 1px solid #ffa39e;
+}
+
+.stl-github-test-error-msg {
+    display: block;
+    font-size: 11px;
+    color: #999;
+    margin-top: 2px;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stl-github-test-summary {
+    margin-top: 14px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    background: #f8f9fa;
+    border: 1px solid #eee;
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    text-align: center;
+}

@@ -1460,3 +1460,260 @@ class stl_main:
 
         done = not os.path.exists(lock_file)
         return {'status': True, 'log': new_content, 'pos': new_pos, 'done': done}
+
+    # ═══════════════════════════════════════════════════════
+    #  GitHub 连通性测试
+    # ═══════════════════════════════════════════════════════
+
+    def test_github_connectivity(self, args):
+        """多线程测试 GitHub 各项连通性
+
+        测试项目（参考 PC 端 test_github_multi / test_github_accelerate）：
+        直连模式：直接访问 GitHub 原始 URL
+        加速模式：URL 拼接加速地址 + 原始 URL（非 HTTP 代理）
+
+        1. 文件访问 (raw.githubusercontent.com)
+        2. 首页访问 (github.com)
+        3. 仓库访问 (github.com - git ls-remote)
+        4. API 访问 (api.github.com)
+
+        参数 args:
+          - use_proxy: 是否使用加速地址（"1"/"0"）
+          - proxy_url: 加速地址（use_proxy=1 时生效）
+
+        返回: { status: True, results: [{ key, name, success, latency, error, warning }] }
+        """
+        import threading
+        import time
+        import subprocess
+        try:
+            import urllib.request
+            import urllib.error
+        except ImportError:
+            return {'status': False, 'msg': 'urllib 不可用'}
+
+        use_proxy = args.get('use_proxy', '0') == '1'
+        proxy_url = (args.get('proxy_url') or '').strip().rstrip('/')
+
+        # 测试项目定义
+        # 注意：首页 URL 用 www.github.com（和 PC 端一致）
+        test_items = [
+            {
+                'key': 'raw',
+                'name': '文件访问',
+                'url': 'https://raw.githubusercontent.com/SillyTavern/SillyTavern/release/start.sh',
+                'method': 'http',
+                'timeout': 15
+            },
+            {
+                'key': 'homepage',
+                'name': '首页访问',
+                'url': 'https://www.github.com',
+                'method': 'http',
+                'timeout': 15
+            },
+            {
+                'key': 'repo',
+                'name': '仓库访问',
+                'url': 'https://github.com/SillyTavern/SillyTavern',
+                'method': 'git',
+                'timeout': 20
+            },
+            {
+                'key': 'api',
+                'name': 'API 访问',
+                'url': 'https://api.github.com/repos/SillyTavern/SillyTavern/releases',
+                'method': 'http',
+                'timeout': 15
+            },
+        ]
+
+        results = []
+        lock = threading.Lock()
+
+        def _is_accelerate_success(code, body):
+            """判断加速测试的 HTTP 响应是否成功（参考 PC 端 is_accelerate_success）"""
+            if 200 <= code < 300 or code in (301, 302):
+                return True, None
+            if code == 403:
+                return True, 'HTTP 403 (加速地址可用，资源受限)'
+            if code == 404:
+                return True, 'HTTP 404 (加速地址可用，资源受限)'
+            lower = (body or '').lower()
+            if 'invalid input' in lower or '\u65e0\u6548\u8f93\u5165' in lower:
+                return True, '\u52a0\u901f\u5730\u5740\u53ef\u7528\uff0c\u4f46\u8be5\u8d44\u6e90\u65e0\u6cd5\u52a0\u901f'
+            return False, None
+
+        def _http_get(url, timeout_sec, accept_header=None):
+            """执行 HTTP GET 请求，返回 (code, body, elapsed_ms, error_msg)"""
+            try:
+                headers = {
+                    'User-Agent': 'SillyTavern-launcher',
+                    'Accept-Encoding': 'gzip, deflate',
+                }
+                if accept_header:
+                    headers['Accept'] = accept_header
+
+                req = urllib.request.Request(url, headers=headers)
+                start = time.time()
+
+                try:
+                    resp = urllib.request.urlopen(req, timeout=timeout_sec)
+                except urllib.error.HTTPError as e:
+                    elapsed = int((time.time() - start) * 1000)
+                    # 尝试读取 body（加速模式下需要 body 来判断）
+                    body = ''
+                    try:
+                        body = e.read().decode('utf-8', errors='replace')[:1000]
+                    except Exception:
+                        pass
+                    return e.code, body, elapsed, None
+
+                elapsed = int((time.time() - start) * 1000)
+                code = resp.getcode()
+
+                # 读取 body（加速模式可能需要判断内容）
+                body = ''
+                try:
+                    raw = resp.read()
+                    # 处理 gzip
+                    if resp.headers.get('Content-Encoding') == 'gzip':
+                        import gzip
+                        body = gzip.decompress(raw).decode('utf-8', errors='replace')[:1000]
+                    else:
+                        body = raw.decode('utf-8', errors='replace')[:1000]
+                except Exception:
+                    pass
+
+                return code, body, elapsed, None
+            except urllib.error.URLError as e:
+                reason = str(e.reason) if hasattr(e, 'reason') else str(e)
+                return 0, '', 0, reason[:200]
+            except Exception as e:
+                return 0, '', 0, str(e)[:200]
+
+        def test_item(item):
+            """测试单个项目的线程函数"""
+            result = {
+                'key': item['key'],
+                'name': item['name'],
+                'url': item['url'],
+                'success': False,
+                'latency': None,
+                'error': None,
+                'warning': None
+            }
+
+            start = time.time()
+
+            if item['method'] == 'git':
+                # git ls-remote 测试
+                test_url = item['url']
+                if use_proxy and proxy_url:
+                    # 加速模式：URL 拼接，不是代理
+                    test_url = proxy_url + '/' + item['url']
+
+                try:
+                    git_cmd = [
+                        'git', '-c', 'credential.helper=',
+                        'ls-remote', '--heads', test_url
+                    ]
+                    env = os.environ.copy()
+                    env['GIT_TERMINAL_PROMPT'] = '0'
+
+                    proc = subprocess.Popen(
+                        git_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=env,
+                        preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None
+                    )
+                    try:
+                        stdout, stderr = proc.communicate(timeout=item['timeout'])
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        stdout, stderr = proc.communicate()
+
+                    elapsed = int((time.time() - start) * 1000)
+
+                    if proc.returncode == 0 and stdout and b'\t' in stdout:
+                        result['success'] = True
+                        result['latency'] = elapsed
+                    else:
+                        err = (stderr or b'').decode('utf-8', errors='replace').strip()
+                        result['error'] = (err[:200] if err else 'git ls-remote \u5931\u8d25')
+                except Exception as e:
+                    result['error'] = str(e)[:200]
+            else:
+                # HTTP 请求测试
+                test_url = item['url']
+                if use_proxy and proxy_url:
+                    # 加速模式：URL 拼接，不是代理
+                    test_url = proxy_url + '/' + item['url']
+
+                # 按 key 设置不同的 Accept 头（和 PC 端一致）
+                accept = None
+                if item['key'] == 'api':
+                    accept = 'application/json'
+                elif item['key'] == 'homepage':
+                    accept = None  # 首页不加特殊 Accept，否则可能 406
+                else:
+                    accept = 'application/vnd.github.v3+json'
+
+                code, body, elapsed, err_msg = _http_get(test_url, item['timeout'], accept)
+
+                if err_msg:
+                    result['error'] = err_msg
+                elif use_proxy:
+                    # 加速模式：用 PC 端的 is_accelerate_success 逻辑
+                    success, warning = _is_accelerate_success(code, body)
+                    result['success'] = success
+                    if success and 200 <= code < 300:
+                        result['latency'] = elapsed
+                    result['warning'] = warning
+                    if not success:
+                        result['error'] = 'HTTP ' + str(code)
+                else:
+                    # 直连模式：200/301/302 算成功
+                    if code in (200, 301, 302):
+                        result['success'] = True
+                        result['latency'] = elapsed
+                    else:
+                        result['error'] = 'HTTP ' + str(code)
+
+            with lock:
+                results.append(result)
+
+        # 启动所有测试线程
+        threads = []
+        for item in test_items:
+            t = threading.Thread(target=test_item, args=(item,))
+            t.daemon = True
+            threads.append(t)
+            t.start()
+
+        # 等待所有线程完成（最多等 45 秒，给 git ls-remote 足够时间）
+        deadline = time.time() + 45
+        for t in threads:
+            remaining = max(0, deadline - time.time())
+            t.join(timeout=remaining)
+
+        # 补充超时未返回的项（线程仍在跑但已超时）
+        returned_keys = set(r['key'] for r in results)
+        for item in test_items:
+            if item['key'] not in returned_keys:
+                results.append({
+                    'key': item['key'],
+                    'name': item['name'],
+                    'url': item['url'],
+                    'success': False,
+                    'latency': None,
+                    'error': '\u6d4b\u8bd5\u8d85\u65f6',
+                    'warning': None
+                })
+
+        # 按 key 排序保证顺序一致
+        key_order = {item['key']: i for i, item in enumerate(test_items)}
+        results.sort(key=lambda r: key_order.get(r['key'], 99))
+
+        return {'status': True, 'results': results}

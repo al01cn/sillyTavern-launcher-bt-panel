@@ -16,7 +16,7 @@ var GithubProxy = (function () {
     var PROXY_API = 'https://api.akams.cn/github';
     var DEFAULT_URL = 'https://ghfast.top/';
     var CACHE_KEY = 'GITHUB_PROXY_LATENCY';  // CacheUtil key（会自动加 STL_ 前缀）
-    var CACHE_TTL = 30 * 60 * 1000;          // 缓存有效期 30 分钟
+    var CACHE_TTL = 3 * 24 * 60 * 60 * 1000;  // 缓存有效期 3 天
 
     /** 静态回退列表（API 不可用时兜底） */
     var FALLBACK_LIST = [
@@ -135,7 +135,7 @@ var GithubProxy = (function () {
     }
 
     /**
-     * 单个节点结果写入缓存（实时更新）
+     * 单个节点结果写入缓存（实时更新，不刷新时间戳）
      */
     function _updateLatencyCacheItem(url, latency) {
         try {
@@ -145,7 +145,7 @@ var GithubProxy = (function () {
                 cached = { data: {}, timestamp: Date.now() };
             }
             cached.data[normUrl] = latency;
-            cached.timestamp = Date.now(); // 刷新时间戳
+            // 不刷新 timestamp，保持原始过期时间
             CacheUtil.localSet(CACHE_KEY, cached);
         } catch (e) {
             // 忽略

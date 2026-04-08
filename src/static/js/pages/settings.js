@@ -121,25 +121,31 @@ function renderSettingsPage() {
                 '<div class="stl-form-group">' +
                     '<div class="stl-info-item">' +
                         '<span class="stl-info-label"><i class="bi bi-terminal"></i> Node.js</span>' +
-                        '<span class="stl-info-value" id="check-node">检测中...</span>' +
+                        '<span class="stl-info-value" id="check-node">-</span>' +
                     '</div>' +
-                    '<button class="btn btn-bt-outline btn-bt-sm" onclick="BTPlugin.checkNode()" style="margin-top: 8px;">检测</button>' +
+                    '<button class="btn btn-bt-outline btn-bt-sm" onclick="checkNode(true)" style="margin-top: 8px;">检测</button>' +
                 '</div>' +
 
                 '<div class="stl-form-group">' +
                     '<div class="stl-info-item">' +
                         '<span class="stl-info-label"><i class="bi bi-git"></i> Git</span>' +
-                        '<span class="stl-info-value" id="check-git">检测中...</span>' +
+                        '<span class="stl-info-value" id="check-git">-</span>' +
                     '</div>' +
-                    '<button class="btn btn-bt-outline btn-bt-sm" onclick="BTPlugin.checkGit()" style="margin-top: 8px;">检测</button>' +
+                    '<button class="btn btn-bt-outline btn-bt-sm" onclick="checkGit(true)" style="margin-top: 8px;">检测</button>' +
                 '</div>' +
 
                 '<div class="stl-form-group">' +
                     '<div class="stl-info-item">' +
-                        '<span class="stl-info-label"><i class="bi bi-lightning-charge"></i> GitHub 连通性</span>' +
-                        '<span class="stl-info-value" id="check-github">-</span>' +
+                        '<span class="stl-info-label"><i class="bi bi-github"></i> GitHub 连通性</span>' +
                     '</div>' +
-                    '<button class="btn btn-bt-outline btn-bt-sm" onclick="stl_testGithubDirect()" style="margin-top: 8px;">测试</button>' +
+                    '<div class="stl-flex" style="gap:8px;margin-top:8px;">' +
+                        '<button class="btn btn-bt-outline btn-bt-sm" onclick="stl_testGithubDirect()" title="直连 GitHub（不使用加速）">' +
+                            '<i class="bi bi-globe"></i> 直连测试' +
+                        '</button>' +
+                        '<button class="btn btn-bt btn-bt-sm" onclick="stl_testGithubProxy()" title="通过加速地址测试 GitHub">' +
+                            '<i class="bi bi-lightning-charge"></i> 加速测试' +
+                        '</button>' +
+                    '</div>' +
                 '</div>' +
             '</div>' +
 
@@ -177,6 +183,12 @@ function renderSettingsPage() {
 
     // 加载设置
     loadSettings();
+
+    // 环境检测：先从缓存渲染，再自动后台检测
+    stl_renderNodeStatus(CacheUtil.localGet('ENV_CHECK_NODE', null));
+    stl_renderGitStatus(CacheUtil.localGet('ENV_CHECK_GIT', null));
+    checkNode(false);
+    checkGit(false);
 
     // 加载 GitHub 加速列表
     stl_loadGhProxyList();
@@ -552,27 +564,273 @@ function stl_autoBestProxy() {
 }
 
 /**
- * 测试 GitHub 直连
+ * 打开 GitHub 连通性测试弹窗
+ * @param {string} title - 弹窗标题
+ * @returns {number} layer 弹窗索引
+ */
+function stl_openGithubTestDialog(title) {
+    var html =
+        '<div id="stl-github-test-dialog" style="padding:15px;">' +
+            '<div class="stl-github-test-list" id="stl-github-test-list">' +
+                '<div class="stl-github-test-item stl-github-test-pending" data-key="raw">' +
+                    '<div class="stl-github-test-info">' +
+                        '<span class="stl-github-test-name">文件访问</span>' +
+                        '<span class="stl-github-test-url">raw.githubusercontent.com</span>' +
+                    '</div>' +
+                    '<div class="stl-github-test-status" id="stl-test-status-raw">' +
+                        '<span class="stl-github-test-wait">等待中</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="stl-github-test-item stl-github-test-pending" data-key="homepage">' +
+                    '<div class="stl-github-test-info">' +
+                        '<span class="stl-github-test-name">首页访问</span>' +
+                        '<span class="stl-github-test-url">github.com</span>' +
+                    '</div>' +
+                    '<div class="stl-github-test-status" id="stl-test-status-homepage">' +
+                        '<span class="stl-github-test-wait">等待中</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="stl-github-test-item stl-github-test-pending" data-key="repo">' +
+                    '<div class="stl-github-test-info">' +
+                        '<span class="stl-github-test-name">仓库访问</span>' +
+                        '<span class="stl-github-test-url">git ls-remote</span>' +
+                    '</div>' +
+                    '<div class="stl-github-test-status" id="stl-test-status-repo">' +
+                        '<span class="stl-github-test-wait">等待中</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="stl-github-test-item stl-github-test-pending" data-key="api">' +
+                    '<div class="stl-github-test-info">' +
+                        '<span class="stl-github-test-name">API 访问</span>' +
+                        '<span class="stl-github-test-url">api.github.com</span>' +
+                    '</div>' +
+                    '<div class="stl-github-test-status" id="stl-test-status-api">' +
+                        '<span class="stl-github-test-wait">等待中</span>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="stl-github-test-summary" id="stl-github-test-summary" style="display:none;"></div>' +
+        '</div>';
+
+    return layer.open({
+        type: 1,
+        title: title || 'GitHub 连通性测试',
+        area: ['520px', 'auto'],
+        content: html,
+        shadeClose: false,
+        closeBtn: 1
+    });
+}
+
+/**
+ * 更新弹窗中某个测试项的状态
+ * @param {string} key - 测试项 key (raw/homepage/repo/api)
+ * @param {string} state - 状态: 'testing' | 'success' | 'fail'
+ * @param {object} data - { latency?, error? }
+ */
+function stl_updateGithubTestItem(key, state, data) {
+    // 使用弹窗内的 context 查找，避免和其他页面元素冲突
+    var $dialog = $('#stl-github-test-dialog');
+    var $item = $dialog.find('[data-key="' + key + '"]');
+    var $status = $dialog.find('#stl-test-status-' + key);
+
+    if (!$item.length) return;
+
+    // 移除旧状态 class
+    $item.removeClass('stl-github-test-pending stl-github-test-testing stl-github-test-success stl-github-test-warn stl-github-test-fail');
+
+    if (state === 'testing') {
+        $item.addClass('stl-github-test-testing');
+        $status.html('<span class="stl-github-test-loading"><i class="bi bi-arrow-repeat" style="animation:stl-spin 1s linear infinite;"></i> 测试中...</span>');
+    } else if (state === 'warn') {
+        // 加速地址可用但该资源无法加速（403/404 等），黄色警告态
+        $item.addClass('stl-github-test-warn');
+        var warnHtml = '<span class="stl-github-test-latency-warn">';
+        warnHtml += '<i class="bi bi-exclamation-triangle-fill" style="font-size:11px;"></i> ';
+        if (data.latency) {
+            warnHtml += data.latency + 'ms';
+        } else {
+            warnHtml += '可用';
+        }
+        warnHtml += '</span>';
+        // warning 详细文字
+        var warningText = data.warning || data.error || '';
+        if (warningText) {
+            warnHtml += ' <span class="stl-github-test-warning">' + warningText + '</span>';
+        }
+        $status.html(warnHtml);
+    } else if (state === 'success') {
+        $item.addClass('stl-github-test-success');
+        var latencyHtml = '';
+        if (data.latency) {
+            latencyHtml = '<span class="stl-github-test-latency-good">' + data.latency + 'ms</span>';
+        }
+        $status.html(latencyHtml || '<span class="stl-github-test-latency-good"><i class="bi bi-check-circle-fill" style="font-size:12px;"></i> 成功</span>');
+    } else if (state === 'fail') {
+        $item.addClass('stl-github-test-fail');
+        var errorHtml = '<span class="stl-github-test-error">失败</span>';
+        if (data.error) {
+            errorHtml += ' <span class="stl-github-test-error-msg">' + data.error + '</span>';
+        }
+        $status.html(errorHtml);
+    }
+}
+
+/**
+ * 显示测试汇总
+ */
+function stl_showGithubTestSummary(results) {
+    var successCount = 0;  // 完全成功（无 warning）
+    var warnCount = 0;     // 部分成功（有 warning）
+    results.forEach(function (r) {
+        if (r.success && r.warning) {
+            warnCount++;
+        } else if (r.success) {
+            successCount++;
+        }
+    });
+    var passCount = successCount + warnCount; // 总通过数（含部分成功）
+
+    var $summary = $('#stl-github-test-summary');
+    var totalCount = results.length;
+    var allGood = (successCount === totalCount);
+    var nonePass = (passCount === 0);
+
+    var icon, msg;
+    if (allGood) {
+        icon = '<i class="bi bi-check-circle" style="color:#20a53a;"></i>';
+        msg = '全部通过 (' + totalCount + '/' + totalCount + ')';
+    } else if (nonePass) {
+        icon = '<i class="bi bi-x-circle" style="color:#d9534f;"></i>';
+        msg = '全部失败 (0/' + totalCount + ')，请检查网络环境';
+    } else {
+        // 有成功和/或有警告
+        icon = '<i class="bi bi-exclamation-triangle" style="color:#faad14;"></i>';
+        if (warnCount > 0 && successCount === 0) {
+            // 全是警告：加速地址可达但所有目标资源都无法加速
+            msg = '地址可达但资源受限 (' + passCount + '/' + totalCount + ')，建议更换节点';
+        } else if (warnCount > 0) {
+            msg = '部分通过 (' + passCount + '/' + totalCount + ')，其中 ' + warnCount + ' 项资源受限';
+        } else {
+            msg = '部分通过 (' + passCount + '/' + totalCount + ')，请检查失败项';
+        }
+    }
+
+    $summary.html(icon + ' ' + msg).show();
+}
+
+/**
+ * 重置弹窗中所有测试项为"等待中"状态
+ */
+function stl_resetGithubTestDialog() {
+    var keys = ['raw', 'homepage', 'repo', 'api'];
+    keys.forEach(function (key) {
+        var $item = $('[data-key="' + key + '"]');
+        var $status = $('#stl-test-status-' + key);
+        $item.removeClass('stl-github-test-testing stl-github-test-success stl-github-test-warn stl-github-test-fail').addClass('stl-github-test-pending');
+        $status.html('<span class="stl-github-test-wait">等待中</span>');
+    });
+    $('#stl-github-test-summary').hide();
+}
+
+/**
+ * 通用 GitHub 连通性测试执行逻辑
+ * @param {object} params - 传给后端的参数
+ * @param {number} dialogIndex - layer 弹窗索引
+ */
+function stl_runGithubTest(params, dialogIndex) {
+    var keys = ['raw', 'homepage', 'repo', 'api'];
+
+    request_plugin('test_github_connectivity', params, function (rdata) {
+        if (!rdata || !rdata.status) {
+            keys.forEach(function (key) {
+                stl_updateGithubTestItem(key, 'fail', { error: rdata ? rdata.msg : '\u8bf7\u6c42\u5931\u8d25' });
+            });
+            stl_showGithubTestSummary([]);
+            return;
+        }
+
+        var results = rdata.results || [];
+
+        // 构建结果 map，方便查找
+        var resultMap = {};
+        results.forEach(function (item) {
+            resultMap[item.key] = item;
+        });
+
+        // 逐个更新（300ms 间隔，让用户看到逐项出结果）
+        keys.forEach(function (key, idx) {
+            setTimeout(function () {
+                var item = resultMap[key];
+                if (!item) {
+                    // 后端未返回该项（线程超时），标记为失败
+                    stl_updateGithubTestItem(key, 'fail', { error: '\u6d4b\u8bd5\u8d85\u65f6' });
+                } else if (item.success && item.warning) {
+                    // 加速地址可用但该资源无法加速（403/404 等），黄色警告态
+                    stl_updateGithubTestItem(key, 'warn', {
+                        latency: item.latency,
+                        warning: item.warning,
+                        error: item.error
+                    });
+                } else if (item.success) {
+                    stl_updateGithubTestItem(key, 'success', {
+                        latency: item.latency,
+                        warning: item.warning,
+                        error: item.error
+                    });
+                } else {
+                    stl_updateGithubTestItem(key, 'fail', { error: item.error });
+                }
+
+                // 最后一个结果出来后，再延迟 300ms 显示汇总（确保状态渲染完）
+                if (idx === keys.length - 1) {
+                    setTimeout(function () {
+                        stl_showGithubTestSummary(results);
+                    }, 300);
+                }
+            }, idx * 300);
+        });
+    });
+}
+
+/**
+ * GitHub 直连测试（不使用加速）
  */
 function stl_testGithubDirect() {
-    $('#check-github').html('<span class="stl-loading"></span> 测试中...');
+    var dialogIndex = stl_openGithubTestDialog('GitHub \u76f4\u8fde\u6d4b\u8bd5');
 
-    var xhr = new XMLHttpRequest();
-    var start = Date.now();
-    xhr.open('HEAD', 'https://github.com', true);
-    xhr.timeout = 10000;
+    stl_resetGithubTestDialog();
 
-    xhr.onload = function () {
-        var ms = Date.now() - start;
-        $('#check-github').html('<span style="color:#20a53a;">' + ms + 'ms</span>');
-    };
-    xhr.onerror = function () {
-        $('#check-github').html('<span style="color:#d9534f;">不可达</span>');
-    };
-    xhr.ontimeout = function () {
-        $('#check-github').html('<span style="color:#d9534f;">超时</span>');
-    };
-    xhr.send();
+    var keys = ['raw', 'homepage', 'repo', 'api'];
+    keys.forEach(function (key) {
+        stl_updateGithubTestItem(key, 'testing', null);
+    });
+
+    stl_runGithubTest({
+        use_proxy: '0'
+    }, dialogIndex);
+}
+
+/**
+ * GitHub 加速测试（使用当前选中的加速地址）
+ */
+function stl_testGithubProxy() {
+    var proxyUrl = _stl_currentProxyUrl || GithubProxy.DEFAULT_URL;
+    var shortUrl = proxyUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    var dialogIndex = stl_openGithubTestDialog('GitHub \u52a0\u901f\u6d4b\u8bd5 (' + shortUrl + ')');
+
+    stl_resetGithubTestDialog();
+
+    var keys = ['raw', 'homepage', 'repo', 'api'];
+    keys.forEach(function (key) {
+        stl_updateGithubTestItem(key, 'testing', null);
+    });
+
+    stl_runGithubTest({
+        use_proxy: '1',
+        proxy_url: proxyUrl
+    }, dialogIndex);
 }
 
 // ════════════════════════════════════════════════════════
@@ -590,30 +848,70 @@ function saveSettings() {
     layer.msg('设置已保存', { icon: 1 });
 }
 
-function checkNode() {
+/**
+ * 渲染 Node.js 检测状态到 DOM
+ * @param {object|null} data - { installed: bool, version: string } 或 null（未检测/未知）
+ */
+function stl_renderNodeStatus(data) {
+    var $el = $('#check-node');
+    if (!$el.length) return;
+    if (data && data.installed) {
+        $el.html('<span style="color: #20a53a;">' + (data.version || '') + ' 已安装</span>');
+    } else if (data && data.installed === false) {
+        $el.html('<span style="color: #d9534f;">未安装</span>');
+    } else {
+        $el.html('-');
+    }
+}
+
+function checkNode(showMsg) {
     $('#check-node').html('<span class="stl-loading"></span> 检测中...');
 
     request_plugin('get_nodejs_version', {}, function (rdata) {
-        if (rdata && rdata.status) {
-            $('#check-node').html('<span style="color: #20a53a;">' + rdata.version + ' 已安装</span>');
-            layer.msg('Node.js 已安装', { icon: 1 });
-        } else {
-            $('#check-node').html('<span style="color: #d9534f;">未安装</span>');
-            layer.msg('Node.js 未安装', { icon: 2 });
+        var result = {
+            installed: !!(rdata && rdata.status),
+            version: (rdata && rdata.version) || ''
+        };
+        // 写缓存
+        CacheUtil.localSet('ENV_CHECK_NODE', result);
+        // 更新 DOM
+        stl_renderNodeStatus(result);
+        if (showMsg !== false) {
+            layer.msg(result.installed ? 'Node.js 已安装' : 'Node.js 未安装', { icon: result.installed ? 1 : 2 });
         }
     });
 }
 
-function checkGit() {
+/**
+ * 渲染 Git 检测状态到 DOM
+ * @param {object|null} data - { installed: bool, version: string } 或 null
+ */
+function stl_renderGitStatus(data) {
+    var $el = $('#check-git');
+    if (!$el.length) return;
+    if (data && data.installed) {
+        $el.html('<span style="color: #20a53a;">' + (data.version || '') + ' 已安装</span>');
+    } else if (data && data.installed === false) {
+        $el.html('<span style="color: #d9534f;">未安装</span>');
+    } else {
+        $el.html('-');
+    }
+}
+
+function checkGit(showMsg) {
     $('#check-git').html('<span class="stl-loading"></span> 检测中...');
 
     request_plugin('is_git_installed', {}, function (rdata) {
-        if (rdata && rdata.installed) {
-            $('#check-git').html('<span style="color: #20a53a;">' + (rdata.version || '') + ' 已安装</span>');
-            layer.msg('Git 已安装', { icon: 1 });
-        } else {
-            $('#check-git').html('<span style="color: #d9534f;">未安装</span>');
-            layer.msg('Git 未安装', { icon: 2 });
+        var result = {
+            installed: !!(rdata && rdata.installed),
+            version: (rdata && rdata.version) || ''
+        };
+        // 写缓存
+        CacheUtil.localSet('ENV_CHECK_GIT', result);
+        // 更新 DOM
+        stl_renderGitStatus(result);
+        if (showMsg !== false) {
+            layer.msg(result.installed ? 'Git 已安装' : 'Git 未安装', { icon: result.installed ? 1 : 2 });
         }
     });
 }
