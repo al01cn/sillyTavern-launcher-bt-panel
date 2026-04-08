@@ -55,7 +55,7 @@ var BTPlugin = (function () {
         var menuMap = { 
             'home': 0, 'tavern': 1, 'versions': 2, 
             'extensions': 3, 'resources': 4, 
-            'console': 5, 'settings': 6 
+            'console': 5, 'settings': 6, 'debug': 7
         };
         $(".stl-nav-item").eq(menuMap[page] || 0).addClass('active');
         

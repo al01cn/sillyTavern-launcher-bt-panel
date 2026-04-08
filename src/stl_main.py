@@ -73,3 +73,53 @@ class stl_main:
         config_file = self.__plugin_path + 'config.json'
         public.WriteFile(config_file, json.dumps(self.__config))
         return True
+
+    def get_nodejs_version(self, args):
+        """获取系统当前默认的 Node.js 版本（执行 node -v）"""
+        try:
+            result = public.ExecShell('node -v')
+            version = (result[0] or '').strip()
+            if version:
+                return {'status': True, 'version': version}
+            # 检查 stderr，可能是 node 未安装
+            err = (result[1] or '').strip()
+            msg = err if err else '未检测到 Node.js'
+            return {'status': False, 'msg': msg, 'version': ''}
+        except Exception as e:
+            return {'status': False, 'msg': str(e), 'version': ''}
+
+    def is_pm2_installed(self, args):
+        """检测 PM2 是否已安装（执行 pm2 --version）"""
+        try:
+            result = public.ExecShell('pm2 --version')
+            output = (result[0] or '').strip()
+            if output:
+                return {'status': True, 'installed': True, 'version': output}
+            # stdout 为空，可能未安装
+            return {'status': True, 'installed': False, 'version': ''}
+        except Exception as e:
+            return {'status': True, 'installed': False, 'version': '', 'msg': str(e)}
+
+    def set_npm_registry(self, args):
+        """全局设置 NPM 源（执行 npm config set registry <url>）"""
+        registry = (args.get('registry') or '').strip()
+        if not registry:
+            return {'status': False, 'msg': 'registry 不能为空'}
+        try:
+            public.ExecShell('npm config set registry ' + registry)
+            return {'status': True, 'msg': 'NPM 源已全局设置为 ' + registry}
+        except Exception as e:
+            return {'status': False, 'msg': str(e)}
+
+    def get_npm_registry(self, args):
+        """获取当前 NPM 源（执行 npm config get registry）"""
+        try:
+            result = public.ExecShell('npm config get registry')
+            registry = (result[0] or '').strip()
+            if registry:
+                return {'status': True, 'registry': registry}
+            err = (result[1] or '').strip()
+            msg = err if err else '未检测到 NPM 源配置'
+            return {'status': False, 'msg': msg, 'registry': ''}
+        except Exception as e:
+            return {'status': False, 'msg': str(e), 'registry': ''}
