@@ -13,7 +13,7 @@ import json
 # 设置运行目录
 os.chdir("/www/server/panel")
 
-stl_path = os.path.join("/www/server/panel", "stl") # 插件根目录
+stl_path = os.path.join("/www/server", "stl") # 插件数据根目录
 
 sillyTavern_path = os.path.join(stl_path, "sillyTavern") # 酒馆存放位置
 
@@ -46,7 +46,6 @@ class stl_main:
     # @param force 强制从文件重新读取配置项 [可选]
     def __get_config(self, key=None, force=False):
         if not self.__config or force:
-            config_file = self.__plugin_path + 'config.json'
             if not os.path.exists(config_file):
                 return None
             f_body = public.ReadFile(config_file)
@@ -70,7 +69,6 @@ class stl_main:
         if key:
             self.__config[key] = value
 
-        config_file = self.__plugin_path + 'config.json'
         public.WriteFile(config_file, json.dumps(self.__config))
         return True
 
@@ -123,3 +121,141 @@ class stl_main:
             return {'status': False, 'msg': msg, 'registry': ''}
         except Exception as e:
             return {'status': False, 'msg': str(e), 'registry': ''}
+
+    # ==================== Git 相关 ====================
+
+    def get_git_version(self, args):
+        """获取系统 Git 版本（执行 git --version）"""
+        try:
+            result = public.ExecShell('git --version')
+            version = (result[0] or '').strip()
+            if version:
+                return {'status': True, 'version': version}
+            err = (result[1] or '').strip()
+            msg = err if err else '未检测到 Git'
+            return {'status': False, 'msg': msg, 'version': ''}
+        except Exception as e:
+            return {'status': False, 'msg': str(e), 'version': ''}
+
+    def is_git_installed(self, args):
+        """检测 Git 是否已安装（执行 git --version）"""
+        try:
+            result = public.ExecShell('git --version')
+            output = (result[0] or '').strip()
+            if output:
+                return {'status': True, 'installed': True, 'version': output}
+            return {'status': True, 'installed': False, 'version': ''}
+        except Exception as e:
+            return {'status': True, 'installed': False, 'version': '', 'msg': str(e)}
+
+    def install_git(self, args):
+        """安装 Git（执行 install_git.sh 脚本）
+
+        流程：
+        1) 检查是否已有安装进程在运行（通过日志锁文件判断）
+        2) 调用 bash install_git.sh，将输出实时写入日志文件
+        3) 返回日志文件路径供前端轮询
+        """
+        import subprocess
+        import time
+
+        log_dir = os.path.join(stl_path, 'logs')
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir, 0o755)
+
+        log_file = os.path.join(log_dir, 'install_git.log')
+        lock_file = log_file + '.lock'
+
+        # 检查是否已在安装中
+        if os.path.exists(lock_file):
+            try:
+                lock_mtime = os.path.getmtime(lock_file)
+                # 如果锁文件超过 10 分钟，视为残留
+                if time.time() - lock_mtime < 600:
+                    return {'status': False, 'msg': 'Git 安装正在进行中，请稍候...', 'installing': True}
+                else:
+                    os.remove(lock_file)
+            except OSError:
+                pass
+
+        # 获取脚本路径
+        script_path = os.path.join(self.__plugin_path, 'install_git.sh')
+        if not os.path.exists(script_path):
+            return {'status': False, 'msg': '安装脚本不存在: install_git.sh'}
+
+        # 清空旧日志，创建锁文件
+        public.WriteFile(log_file, '')
+        public.WriteFile(lock_file, str(int(time.time())))
+
+        # 后台执行安装脚本，输出写入日志文件
+        def _run_install():
+            try:
+                with open(log_file, 'a') as f:
+                    f.write('[INFO] 开始安装 Git...\n')
+                    f.flush()
+
+                    proc = subprocess.Popen(
+                        ['bash', script_path],
+                        stdout=f,
+                        stderr=subprocess.STDOUT,
+                        env=os.environ.copy()
+                    )
+                    proc.wait()
+
+                    if proc.returncode == 0:
+                        f.write('[SUCCESS] Git 安装完成\n')
+                    else:
+                        f.write('[ERROR] Git 安装失败，退出码: ' + str(proc.returncode) + '\n')
+                    f.flush()
+            except Exception as e:
+                with open(log_file, 'a') as f:
+                    f.write('[ERROR] 安装过程异常: ' + str(e) + '\n')
+                    f.flush()
+            finally:
+                # 移除锁文件
+                if os.path.exists(lock_file):
+                    os.remove(lock_file)
+
+        import threading
+        t = threading.Thread(target=_run_install)
+        t.daemon = True
+        t.start()
+
+        return {
+            'status': True,
+            'msg': 'Git 安装已启动',
+            'log_file': log_file,
+            'installing': True
+        }
+
+    def get_install_git_log(self, args):
+        """读取 Git 安装日志（供前端轮询）
+
+        参数 args:
+          - pos: 上次读取的位置（字节偏移），不传则从头开始
+        """
+        import time
+
+        log_dir = os.path.join(stl_path, 'logs')
+        log_file = os.path.join(log_dir, 'install_git.log')
+        lock_file = log_file + '.lock'
+
+        if not os.path.exists(log_file):
+            return {'status': True, 'log': '', 'pos': 0, 'done': True}
+
+        # 获取上次读取位置
+        pos = int(args.get('pos') or 0)
+        file_size = os.path.getsize(log_file)
+
+        if pos >= file_size:
+            # 没有新内容
+            done = not os.path.exists(lock_file)
+            return {'status': True, 'log': '', 'pos': pos, 'done': done}
+
+        with open(log_file, 'r') as f:
+            f.seek(pos)
+            new_content = f.read()
+            new_pos = f.tell()
+
+        done = not os.path.exists(lock_file)
+        return {'status': True, 'log': new_content, 'pos': new_pos, 'done': done}
