@@ -1486,3 +1486,158 @@ button.stl-mode-btn.active i {
 .fs-file-list::-webkit-scrollbar-thumb:hover {
     background: #b0b0b0;
 }
+
+/* ==================== 酒馆选项配置页面样式 ==================== */
+
+/* 配置区块卡片 */
+.stl-config-section {
+    margin-bottom: 15px;
+}
+
+/* 区块头部 */
+.stl-section-header {
+    padding: 14px 18px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e5e5e5;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s ease;
+}
+
+.stl-section-header:hover {
+    background: #f0f2f5;
+}
+
+.stl-section-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+    display: flex;
+    align-items: center;
+}
+
+.stl-section-title i:first-child {
+    margin-right: 8px;
+    color: #20a53a;
+    font-size: 16px;
+}
+
+.stl-collapse-icon {
+    transition: transform 0.3s ease;
+    color: #999;
+    font-size: 14px;
+}
+
+.stl-section-header[aria-expanded="true"] .stl-collapse-icon {
+    transform: rotate(180deg);
+}
+
+/* 区块内容区 */
+.stl-section-body {
+    overflow: hidden;
+}
+
+.stl-section-content {
+    padding: 18px;
+    background: #fff;
+}
+
+/* 动态列表 */
+.stl-dynamic-list {
+    margin-bottom: 10px;
+}
+
+.stl-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+}
+
+.stl-list-header span {
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+}
+
+.stl-list-header .btn {
+    padding: 4px 12px;
+    font-size: 12px;
+}
+
+.stl-list-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.stl-list-item {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    animation: slideIn 0.2s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.stl-list-item input {
+    flex: 1;
+}
+
+.stl-remove-item-btn {
+    padding: 4px 10px;
+    flex-shrink: 0;
+}
+
+/* 范围滑块值显示 */
+.stl-range-value {
+    display: inline-block;
+    min-width: 30px;
+    padding: 2px 8px;
+    background: #20a53a;
+    color: white;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+}
+
+/* 未安装提示 */
+.stl-not-installed {
+    background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
+    border: 2px solid #ffc107;
+    border-radius: 8px;
+    padding: 40px;
+    text-align: center;
+}
+
+.stl-not-installed h3 {
+    font-size: 22px;
+    color: #856404;
+    margin: 15px 0;
+}
+
+.stl-not-installed p {
+    font-size: 14px;
+    color: #856404;
+    margin: 15px 0;
+}
+
+.stl-not-installed .btn {
+    margin-top: 10px;
+    padding: 10px 24px;
+    font-size: 14px;
+}

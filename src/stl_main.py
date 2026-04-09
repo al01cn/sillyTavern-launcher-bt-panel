@@ -40,7 +40,23 @@ class stl_main:
     __config = None
 
     def __init__(self):
-        pass
+        # 检查PyYAML可用性
+        self._yaml_available = False
+        try:
+            import yaml
+            self._yaml_available = True
+        except ImportError:
+            # 尝试自动安装
+            try:
+                result = public.ExecShell('pip install pyyaml 2>&1')
+                if result[1] == '':  # 无错误输出
+                    import yaml
+                    self._yaml_available = True
+            except Exception:
+                pass
+        
+        if not self._yaml_available:
+            public.WriteLog('STL', '警告: PyYAML未安装，酒馆配置管理功能将不可用')
 
     # 读取配置项(插件自身的配置文件)
     # @param key   取指定配置项，若不传则取所有配置 [可选]
@@ -103,6 +119,54 @@ class stl_main:
                 public.WriteFile(config_file, json.dumps({}))
             except Exception:
                 pass
+
+    def get_system_info(self, args):
+        """获取系统信息（整合接口）
+
+        返回: { status, app_version, node_version, git_version, tavern_version }
+        """
+        import re
+
+        # 1. 获取插件版本（从配置文件或默认值）
+        app_version = self.__get_config('plugin_version') or '1.0.0'
+
+        # 2. 获取 Node.js 版本
+        node_version = ''
+        try:
+            result = public.ExecShell('node -v')
+            node_version = (result[0] or '').strip()
+        except Exception:
+            pass
+
+        # 3. 获取 Git 版本
+        git_version = ''
+        try:
+            result = public.ExecShell('git --version')
+            git_version = (result[0] or '').strip()
+        except Exception:
+            pass
+
+        # 4. 获取酒馆版本
+        tavern_version = ''
+        st_path = self.__get_config('sillytavern_path') or sillyTavern_path
+        pkg_file = os.path.join(st_path, 'package.json')
+        if os.path.isfile(pkg_file):
+            try:
+                content = public.ReadFile(pkg_file)
+                if content:
+                    match = re.search(r'"version"\s*:\s*"([^"]+)"', content)
+                    if match:
+                        tavern_version = match.group(1)
+            except Exception:
+                pass
+
+        return {
+            'status': True,
+            'app_version': app_version,
+            'node_version': node_version,
+            'git_version': git_version,
+            'tavern_version': tavern_version
+        }
 
     def get_nodejs_version(self, args):
 
@@ -2565,3 +2629,272 @@ class stl_main:
                 'size': 'N/A'
             }]
         }
+
+    def _get_instance_path(self, instance_id=None):
+        """获取实例路径
+        
+        参数:
+          - instance_id: 实例ID（可选，默认当前激活实例）
+        
+        返回: 实例路径或None
+        """
+        if instance_id:
+            instances = self.__get_config('sillytavern_instances') or []
+            target = next((i for i in instances if i['id'] == instance_id), None)
+            return target['path'] if target else None
+        else:
+            return self.__get_config('sillytavern_path') or sillyTavern_path
+
+    def check_tavern_installation(self, args):
+        """检查酒馆安装状态并自动初始化config.yaml
+        
+        返回: {
+            status: bool,
+            installed: bool,  # 是否已安装酒馆
+            config_exists: bool,  # config.yaml是否存在
+            default_exists: bool,  # default/config.yaml是否存在
+            auto_copied: bool,  # 是否自动复制了配置文件
+            msg: str
+        }
+        """
+        if not self._yaml_available:
+            return {
+                'status': False,
+                'installed': False,
+                'msg': 'PyYAML库未安装，请先执行: pip install pyyaml'
+            }
+        
+        instance_id = args.get('instance_id') if args else None
+        st_path = self._get_instance_path(instance_id)
+        
+        if not st_path or not os.path.isdir(st_path):
+            return {
+                'status': True,
+                'installed': False,
+                'config_exists': False,
+                'default_exists': False,
+                'auto_copied': False,
+                'msg': 'SillyTavern未安装，请前往版本管理页面安装'
+            }
+        
+        config_file = os.path.join(st_path, 'config.yaml')
+        default_config = os.path.join(st_path, 'default', 'config.yaml')
+        
+        config_exists = os.path.isfile(config_file)
+        default_exists = os.path.isfile(default_config)
+        
+        auto_copied = False
+        
+        # 如果根目录没有config.yaml但default下有，自动复制并修改为服务端配置
+        if not config_exists and default_exists:
+            try:
+                import shutil
+                import yaml
+                
+                # 复制默认配置文件
+                shutil.copy2(default_config, config_file)
+                
+                # 读取配置文件
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                
+                if not isinstance(config, dict):
+                    config = {}
+                
+                # 修改为服务端适用的配置
+                config['listen'] = True  # 监听所有接口
+                config['protocol'] = {
+                    'ipv4': True,   # 启用IPv4
+                    'ipv6': True    # 启用IPv6
+                }
+                config['dnsPreferIPv6'] = False  # DNS偏好保持默认（优先IPv4）
+                
+                # 关闭浏览器自动启动（服务器端无意义）
+                if 'browserLaunch' not in config:
+                    config['browserLaunch'] = {}
+                config['browserLaunch']['enabled'] = False
+                
+                # 写回配置文件
+                yaml_content = yaml.dump(
+                    config,
+                    default_flow_style=False,
+                    allow_unicode=True,
+                    sort_keys=False
+                )
+                
+                with open(config_file, 'w', encoding='utf-8') as f:
+                    f.write(yaml_content)
+                
+                auto_copied = True
+                config_exists = True
+                public.WriteLog('STL', '自动复制并初始化config.yaml为服务端配置')
+            except Exception as e:
+                return {
+                    'status': False,
+                    'installed': True,
+                    'config_exists': False,
+                    'default_exists': default_exists,
+                    'auto_copied': False,
+                    'msg': '自动复制配置文件失败: ' + str(e)
+                }
+        
+        return {
+            'status': True,
+            'installed': True,
+            'config_exists': config_exists,
+            'default_exists': default_exists,
+            'auto_copied': auto_copied,
+            'msg': '配置已就绪' if config_exists else '未找到配置文件'
+        }
+
+    def get_tavern_config(self, args):
+        """获取酒馆配置文件（config.yaml）
+        
+        参数 args:
+          - instance_id: 实例ID（可选，默认当前激活实例）
+        
+        返回: {
+            status: bool,
+            config: dict,  # 解析后的配置对象
+            file_path: str,  # 配置文件路径
+            msg: str  # 错误信息（如有）
+        }
+        """
+        if not self._yaml_available:
+            return {
+                'status': False,
+                'msg': 'PyYAML库未安装，请先执行: pip install pyyaml'
+            }
+        
+        import yaml
+        
+        instance_id = args.get('instance_id') if args else None
+        st_path = self._get_instance_path(instance_id)
+        
+        if not st_path or not os.path.isdir(st_path):
+            return {
+                'status': False,
+                'msg': 'SillyTavern未安装'
+            }
+        
+        config_file = os.path.join(st_path, 'config.yaml')
+        
+        if not os.path.isfile(config_file):
+            # 尝试自动初始化
+            init_result = self.check_tavern_installation(args)
+            if not init_result['status'] or not init_result['config_exists']:
+                return {
+                    'status': False,
+                    'msg': init_result.get('msg', '配置文件不存在')
+                }
+        
+        try:
+            content = public.ReadFile(config_file)
+            if not content:
+                return {
+                    'status': False,
+                    'msg': '读取配置文件失败'
+                }
+            
+            # 使用safe_load确保安全性
+            config = yaml.safe_load(content)
+            if not isinstance(config, dict):
+                config = {}
+            
+            # 获取文件修改时间（用于缓存验证）
+            file_mtime = os.path.getmtime(config_file)
+            
+            return {
+                'status': True,
+                'config': config,
+                'file_path': config_file,
+                'file_mtime': file_mtime,
+                'msg': '配置加载成功'
+            }
+        except Exception as e:
+            public.WriteLog('STL', '读取YAML配置失败: ' + str(e))
+            return {
+                'status': False,
+                'msg': '解析配置文件失败: ' + str(e)
+            }
+
+    def update_tavern_config(self, args):
+        """更新酒馆配置文件
+        
+        参数 args:
+          - config: JSON字符串形式的配置数据
+          - instance_id: 实例ID（可选）
+        
+        返回: {
+            status: bool,
+            msg: str
+        }
+        """
+        if not self._yaml_available:
+            return {
+                'status': False,
+                'msg': 'PyYAML库未安装，请先执行: pip install pyyaml'
+            }
+        
+        import yaml
+        import json
+        
+        instance_id = args.get('instance_id') if args else None
+        st_path = self._get_instance_path(instance_id)
+        
+        if not st_path or not os.path.isdir(st_path):
+            return {
+                'status': False,
+                'msg': 'SillyTavern未安装'
+            }
+        
+        config_file = os.path.join(st_path, 'config.yaml')
+        
+        if not os.path.isfile(config_file):
+            return {
+                'status': False,
+                'msg': '配置文件不存在'
+            }
+        
+        try:
+            # 解析JSON配置数据
+            config_str = args.get('config')
+            if isinstance(config_str, str):
+                config_data = json.loads(config_str)
+            else:
+                config_data = config_str
+            
+            if not isinstance(config_data, dict):
+                return {
+                    'status': False,
+                    'msg': '配置数据格式无效'
+                }
+            
+            # 序列化为YAML格式
+            yaml_content = yaml.dump(
+                config_data,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False  # 保持键的顺序
+            )
+            
+            # 写入文件
+            public.WriteFile(config_file, yaml_content)
+            
+            public.WriteLog('STL', '酒馆配置已更新')
+            
+            return {
+                'status': True,
+                'msg': '配置已保存'
+            }
+        except json.JSONDecodeError as e:
+            return {
+                'status': False,
+                'msg': '配置数据解析失败: ' + str(e)
+            }
+        except Exception as e:
+            public.WriteLog('STL', '写入YAML配置失败: ' + str(e))
+            return {
+                'status': False,
+                'msg': '保存配置文件失败: ' + str(e)
+            }
