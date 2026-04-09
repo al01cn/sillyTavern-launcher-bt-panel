@@ -52,26 +52,26 @@ function renderHomePage() {
                             '</div>' +
                             // 访问模式（增加高度）
                             '<div class="stl-mode-switch">' +
-                                '<button class="stl-mode-btn active" data-mode="lan" onclick="BTPlugin.switchMode(\'lan\')">' +
+                                '<button class="stl-mode-btn" data-mode="lan" onclick="BTPlugin.switchMode(\'lan\')">' +
                                     '<i class="bi bi-wifi"></i> 局域网模式' +
                                 '</button>' +
-                                '<button class="stl-mode-btn" data-mode="wan" onclick="BTPlugin.switchMode(\'wan\')">' +
+                                '<button class="stl-mode-btn active" data-mode="wan" onclick="BTPlugin.switchMode(\'wan\')">' +
                                     '<i class="bi bi-globe"></i> 公网模式' +
                                 '</button>' +
                             '</div>' +
                         '</div>' +
                         '<div>' +
                             // 启动/停止按钮
-                            '<button class="btn btn-bt btn-start-large" id="btn-start" onclick="BTPlugin.startService()" style="padding:21px;">' +
+                            '<button class="btn btn-bt btn-start-large btn-disabled" id="btn-start" onclick="BTPlugin.startService()" style="padding:21px;" disabled>' +
                                 '<i class="bi bi-play-fill"></i>' +
                                 '<span>启动 SillyTavern</span>' +
                             '</button>' +
-                            '<button class="btn btn-bt-danger btn-start-large" id="btn-stop" onclick="BTPlugin.stopService()" style="display:none;padding:21px;">' +
+                            '<button class="btn btn-bt-danger btn-start-large" id="btn-stop" onclick="BTPlugin.stopService()" style="display:none;padding:21px;" disabled>' +
                                 '<i class="bi bi-stop-fill"></i>' +
                                 '<span>停止服务</span>' +
                             '</button>' +
                             // 访问链接
-                            '<div class="stl-flex stl-flex-between"">' +
+                            '<div class="stl-flex stl-flex-between">' +
                                 '<span class="text-muted" id="server-url" style="font-size:12px;"></span>' +
                                 '<a href="javascript:void(0)" onclick="BTPlugin.openServer()" id="btn-visit" style="display:none;font-size:12px;">访问酒馆 <i class="bi bi-box-arrow-up-right"></i></a>' +
                             '</div>' +
@@ -156,6 +156,73 @@ function loadSystemInfo() {
             $('#tavern-version').text(rdata.tavern_version || '未安装');
         }
     });
+    
+    // 检查服务状态，同步按钮显示
+    checkServiceStatus();
+}
+
+/**
+ * 检查服务状态并同步UI
+ * 同时检查酒馆安装状态和PM2进程运行状态，决定按钮启用/禁用
+ */
+function checkServiceStatus() {
+    // 先获取安装状态
+    request_plugin('get_startup_info', {}, function(startupData) {
+        if (!startupData) startupData = {};
+        var tavernInstalled = startupData && startupData.status && startupData.tavern_installed;
+        
+        // 再获取进程状态
+        request_plugin('pm2_status', {}, function(rdata) {
+            if (!rdata) rdata = {};
+            var running = rdata && rdata.status && rdata.running;
+            
+            if (running) {
+                // 服务正在运行
+                $('#btn-start').hide();
+                $('#btn-stop').show().prop('disabled', false).removeClass('btn-disabled');
+                $('#service-status').text('运行中').removeClass('stl-status-stopped').addClass('stl-status-started');
+                
+                // 从后端获取正确的访问URL（含局域网/公网IP）
+                var mode = localStorage.getItem('stl_access_mode') || 'wan';
+                request_plugin('get_access_url', { mode: mode }, function(urlData) {
+                    var url = (urlData.status && urlData.url) ? urlData.url : '';
+                    if (!url) {
+                        // 降级：直接用端口拼 localhost
+                        request_plugin('get_config', { key: 'tavern_port' }, function(configData) {
+                            var port = (configData.status && configData.value) ? configData.value : '8000';
+                            url = 'http://localhost:' + port;
+                            $('#server-url').text(url);
+                            $('#btn-visit').show();
+                        });
+                    } else {
+                        $('#server-url').text(url);
+                        $('#btn-visit').show();
+                    }
+                });
+            } else if (rdata && rdata.status) {
+                // pm2_status 成功返回，但进程不在运行
+                $('#btn-start').show();
+                $('#btn-stop').hide();
+                $('#service-status').text('已停止').removeClass('stl-status-started').addClass('stl-status-stopped');
+                $('#server-url').text('');
+                $('#btn-visit').hide();
+                
+                // 启用/禁用启动按钮：酒馆已安装才启用
+                if (tavernInstalled) {
+                    $('#btn-start').prop('disabled', false).removeClass('btn-disabled');
+                } else {
+                    $('#btn-start').prop('disabled', true).addClass('btn-disabled');
+                }
+            } else {
+                // pm2_status 请求失败（PM2 可能不可用）
+                // 不盲目更新状态，保持当前显示
+                // 按钮禁用处理
+                $('#btn-start').prop('disabled', true).addClass('btn-disabled');
+                $('#btn-stop').prop('disabled', true).addClass('btn-disabled');
+                console.warn('服务状态检查失败:', rdata ? rdata.msg : '未知错误');
+            }
+        });
+    });
 }
 
 /**
@@ -183,23 +250,75 @@ function refreshInfo() {
 function startService() {
     $('#btn-start').html('<span class="stl-loading"></span> 启动中...').prop('disabled', true);
     
-    request_plugin('start_service', {}, function (rdata) {
-        if (rdata.status) {
-            $('#btn-start').hide();
-            $('#btn-stop').show();
-            $('#service-status').text('运行中').removeClass('stl-status-stopped').addClass('stl-status-started');
-            
-            // 显示访问链接
-            if (rdata.url) {
-                $('#server-url').text(rdata.url);
-                $('#btn-visit').show();
-            }
-            
-            layer.msg('服务已启动', { icon: 1 });
-        } else {
+    // 第一步：获取环境信息
+    request_plugin('get_startup_info', {}, function(envData) {
+        if (!envData.status) {
             $('#btn-start').html('<i class="bi bi-play-fill"></i><span>启动 SillyTavern</span>').prop('disabled', false);
-            layer.msg(rdata.msg || '启动失败', { icon: 2 });
+            layer.msg('获取环境信息失败', { icon: 2 });
+            return;
         }
+        
+        // 检查酒馆是否安装
+        if (!envData.tavern_installed) {
+            $('#btn-start').html('<i class="bi bi-play-fill"></i><span>启动 SillyTavern</span>').prop('disabled', false);
+            layer.confirm('SillyTavern 尚未安装，是否前往安装？', {
+                btn: ['去安装', '取消']
+            }, function(index) {
+                BTPlugin.showPage('versions');
+                layer.close(index);
+            });
+            return;
+        }
+        
+        // 检查PM2是否安装
+        if (!envData.pm2_installed) {
+            $('#btn-start').html('<i class="bi bi-play-fill"></i><span>启动 SillyTavern</span>').prop('disabled', false);
+            layer.confirm('PM2 未安装，是否立即安装？', {
+                btn: ['安装', '取消']
+            }, function(index) {
+                // 调用 PM2 自动安装功能
+                if (window.Pm2 && typeof window.Pm2.autoInstallPm2 === 'function') {
+                    window.Pm2.autoInstallPm2(function(rdata) {
+                        if (rdata.status) {
+                            layer.msg('PM2 安装成功，请重新点击启动', { icon: 1 });
+                        } else {
+                            layer.msg(rdata.msg || 'PM2 安装失败', { icon: 2 });
+                        }
+                    });
+                } else {
+                    layer.msg('PM2 自动安装功能不可用，请手动安装', { icon: 2 });
+                }
+                layer.close(index);
+            });
+            return;
+        }
+        
+        // 第二步：执行启动
+        request_plugin('start_service', {}, function (rdata) {
+            if (rdata.status) {
+                $('#btn-start').hide();
+                $('#btn-stop').show();
+                $('#service-status').text('运行中').removeClass('stl-status-stopped').addClass('stl-status-started');
+                
+                if (rdata.url) {
+                    $('#server-url').text(rdata.url);
+                    $('#btn-visit').show();
+                }
+                
+                // 先通知控制台页面（在跳转之前）
+                if (window.ConsolePage && typeof window.ConsolePage.onServiceStart === 'function') {
+                    window.ConsolePage.onServiceStart(envData);
+                }
+                
+                // 然后跳转到控制台页面
+                BTPlugin.showPage('console');
+                
+                layer.msg('服务已启动', { icon: 1 });
+            } else {
+                $('#btn-start').html('<i class="bi bi-play-fill"></i><span>启动 SillyTavern</span>').prop('disabled', false);
+                layer.msg(rdata.msg || '启动失败', { icon: 2 });
+            }
+        });
     });
 }
 
@@ -208,7 +327,12 @@ function startService() {
  */
 function stopService() {
     $('#btn-stop').html('<span class="stl-loading"></span> 停止中...').prop('disabled', true);
-    
+
+    // 立即停止轮询，不等后端返回
+    if (window.ConsolePage && typeof window.ConsolePage.onServiceStop === 'function') {
+        window.ConsolePage.onServiceStop();
+    }
+
     request_plugin('stop_service', {}, function (rdata) {
         if (rdata.status) {
             $('#btn-stop').hide();
@@ -216,11 +340,14 @@ function stopService() {
             $('#service-status').text('已停止').removeClass('stl-status-started').addClass('stl-status-stopped');
             $('#server-url').text('');
             $('#btn-visit').hide();
-            
             layer.msg('服务已停止', { icon: 1 });
         } else {
             $('#btn-stop').html('<i class="bi bi-stop-fill"></i><span>停止服务</span>').prop('disabled', false);
             layer.msg(rdata.msg || '停止失败', { icon: 2 });
+            // 如果停止失败，恢复轮询
+            if (window.ConsolePage && typeof window.ConsolePage.onServiceResume === 'function') {
+                window.ConsolePage.onServiceResume();
+            }
         }
     });
 }

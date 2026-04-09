@@ -162,6 +162,26 @@ var Pm2 = (function () {
     }
 
     /**
+     * 9.1. 优雅重载 PM2 管理的 SillyTavern（pm2 reload）
+     *    对于 fork 模式，等价于优雅的 stop + start。
+     *    会先重新生成配置，确保代理等设置是最新的。
+     *    如果进程不存在，自动执行启动。
+     *
+     * @param {function} callback 回调 function(rdata)  { status, msg }
+     * @param {string}   appDir   SillyTavern 目录路径（可选）
+     */
+    function reload(callback, appDir) {
+        var params = {};
+        if (appDir) params.app_dir = appDir;
+
+        request_plugin('pm2_reload', params, function (rdata) {
+            if (callback) callback(rdata || { status: false, msg: '请求失败' });
+        }, function () {
+            if (callback) callback({ status: false, msg: '请求后端失败' });
+        });
+    }
+
+    /**
      * 10. 强制停止并从 PM2 中移除 SillyTavern（pm2 delete）
      *     不同于 stop（仅暂停），此方法会彻底从 PM2 进程列表中移除。
      *     需要重新使用 start() 才能再次启动。
@@ -236,6 +256,7 @@ var Pm2 = (function () {
         start: start,
         stop: stop,
         restart: restart,
+        reload: reload,
         forceStop: forceStop,
         getLogs: getLogs,
         getStatus: getStatus

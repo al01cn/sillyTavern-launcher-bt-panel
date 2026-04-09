@@ -196,10 +196,12 @@ body {
     background: var(--bt-primary-dark);
 }
 
-.btn-bt:disabled {
+.btn-bt:disabled,
+.btn-bt.btn-disabled {
     background: #ccc;
     border-color: #ccc;
     cursor: not-allowed;
+    opacity: 0.7;
 }
 
 .btn-bt-outline {
@@ -223,6 +225,14 @@ body {
 .btn-bt-danger:hover {
     background: #c9302c;
     border-color: #c9302c;
+}
+
+.btn-bt-danger:disabled,
+.btn-bt-danger.btn-disabled {
+    background: #ccc;
+    border-color: #ccc;
+    cursor: not-allowed;
+    opacity: 0.7;
 }
 
 .btn-bt-sm {
@@ -1640,4 +1650,61 @@ button.stl-mode-btn.active i {
     margin-top: 10px;
     padding: 10px 24px;
     font-size: 14px;
+}
+
+/* 自动滚动开关样式 */
+.stl-auto-scroll-toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: #666;
+    cursor: pointer;
+    user-select: none;
+}
+
+.stl-auto-scroll-toggle input[type="checkbox"] {
+    margin: 0;
+    width: 14px;
+    height: 14px;
+    accent-color: var(--bt-primary);
+}
+
+/* 日志文件路径提示 */
+.stl-log-path-hint {
+    padding: 8px 15px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e5e5e5;
+    font-size: 12px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stl-log-path-hint i:first-child {
+    color: var(--bt-primary);
+    font-size: 14px;
+}
+
+.stl-log-path-hint code {
+    background: #e9ecef;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-family: Consolas, Monaco, monospace;
+    font-size: 11px;
+    color: #333;
+    word-break: break-all;
+    flex: 1;
+}
+
+.stl-log-path-hint a {
+    color: var(--bt-primary);
+    text-decoration: none;
+    font-size: 14px;
+    transition: color 0.2s;
+}
+
+.stl-log-path-hint a:hover {
+    color: var(--bt-primary-dark);
 }

@@ -48,6 +48,18 @@ var BTPlugin = (function () {
      * 显示指定页面
      */
     function showPage(page) {
+        // 触发旧页面隐藏事件前，先标记控制台页面的活跃状态
+        if (currentPage === 'console') {
+            if (window.ConsolePage && typeof window.ConsolePage._setConsoleActive === 'function') {
+                window.ConsolePage._setConsoleActive(false);
+            }
+        }
+
+        // 触发旧页面隐藏事件
+        if (currentPage) {
+            $(document).trigger('stl-page-hidden', [currentPage]);
+        }
+        
         currentPage = page;
         
         // 更新菜单选中状态
@@ -67,6 +79,14 @@ var BTPlugin = (function () {
         } else {
             renderHomePage();
         }
+        
+        // 切换到首页或控制台时，重新检测服务状态以更新按钮
+        if (page === 'home' && typeof checkServiceStatus === 'function') {
+            checkServiceStatus();
+        }
+        
+        // 触发新页面显示事件
+        $(document).trigger('stl-page-shown', [page]);
     }
 
     // ======== 通用操作 ========
@@ -143,22 +163,24 @@ return {
     downloadVersion: downloadVersion,
     switchMode: switchMode,
     
-    // 版本管理（新版本）
-    switchVersionTab: window.switchVersionTab,
-    addStInstance: window.addStInstance,
-    doSwitchInstance: window.doSwitchInstance,
-    doRemoveInstance: window.doRemoveInstance,
-    checkForUpdate: window.checkForUpdate,
-    installLatestVersion: window.installLatestVersion,
+    // 版本管理（新版本）——运行时代理，避免 IIFE 执行时 window.* 尚未加载
+    switchVersionTab: function() { return window.switchVersionTab && window.switchVersionTab.apply(this, arguments); },
+    addStInstance: function() { return window.addStInstance && window.addStInstance.apply(this, arguments); },
+    doSwitchInstance: function() { return window.doSwitchInstance && window.doSwitchInstance.apply(this, arguments); },
+    doRemoveInstance: function() { return window.doRemoveInstance && window.doRemoveInstance.apply(this, arguments); },
+    checkForUpdate: function() { return window.checkForUpdate && window.checkForUpdate.apply(this, arguments); },
+    installLatestVersion: function() { return window.installLatestVersion && window.installLatestVersion.apply(this, arguments); },
     
-    // 页面函数（从全局作用域获取）
-    startService: window.startService,
-    stopService: window.stopService,
-    openServer: window.openServer,
-    saveSettings: window.saveSettings,
-    checkNode: window.checkNode,
-    checkGit: window.checkGit,
-        
+    // 页面函数（运行时代理）
+    startService: function() { return window.startService && window.startService.apply(this, arguments); },
+    stopService: function() { return window.stopService && window.stopService.apply(this, arguments); },
+    forceStopService: function() { return window.forceStopService && window.forceStopService.apply(this, arguments); },
+    openServer: function() { return window.openServer && window.openServer.apply(this, arguments); },
+    saveSettings: function() { return window.saveSettings && window.saveSettings.apply(this, arguments); },
+    checkNode: function() { return window.checkNode && window.checkNode.apply(this, arguments); },
+    checkGit: function() { return window.checkGit && window.checkGit.apply(this, arguments); },
+    clearLogs: function() { return window.clearLogs && window.clearLogs.apply(this, arguments); },
+    
         // 兼容旧接口
         show_index: renderHomePage,
         get_logs: renderConsolePage,

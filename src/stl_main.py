@@ -8,6 +8,7 @@
 
 import sys
 import os
+import re
 import json
 import socket
 
@@ -38,6 +39,9 @@ class stl_main:
 
     __plugin_path = "/www/server/panel/plugin/{{#plugin_name#}}/"
     __config = None
+
+    # 日志增量读取位置追踪：{'out': (inode, size, line_count), 'err': ...}
+    _log_positions = {}
 
     def __init__(self):
         # 检查PyYAML可用性
@@ -426,6 +430,100 @@ class stl_main:
 
         return env
 
+    def _build_pm2_proxy_env(self):
+        """内部方法：构建 PM2 代理环境变量字典（仅代理相关，用于 ecosystem 配置）
+
+        根据插件代理设置动态决定环境变量：
+        - mode='none': 不设置代理
+        - mode='custom': 使用自定义代理地址
+        - mode='system': 使用系统代理
+        """
+        proxy_config = self.__get_config('proxy') or {}
+        mode = proxy_config.get('mode', 'none')
+        result = {}
+
+        if mode == 'custom':
+            host = proxy_config.get('host', '').strip()
+            port = proxy_config.get('port', '').strip()
+            if host and port:
+                proxy_url = 'http://' + host + ':' + port
+                result['http_proxy'] = proxy_url
+                result['https_proxy'] = proxy_url
+                result['all_proxy'] = 'socks5://' + host + ':' + port
+                result['no_proxy'] = 'localhost,127.0.0.1'
+
+        elif mode == 'system':
+            sys_proxy = self._read_system_proxy_env()
+            if sys_proxy:
+                if sys_proxy.get('http_proxy'):
+                    result['http_proxy'] = sys_proxy['http_proxy']
+                if sys_proxy.get('https_proxy'):
+                    result['https_proxy'] = sys_proxy['https_proxy']
+                if sys_proxy.get('all_proxy'):
+                    result['all_proxy'] = sys_proxy['all_proxy']
+                if sys_proxy.get('http_proxy') or sys_proxy.get('https_proxy'):
+                    result['no_proxy'] = 'localhost,127.0.0.1'
+
+        return result
+
+    def _ensure_ecosystem_config(self, app_dir):
+        """内部方法：生成/更新 SillyTavern 根目录的 ecosystem.config.cjs
+
+        每次调用都会重新生成，确保代理等设置是最新的。
+        配置文件放在酒馆根目录，随 SillyTavern 更新会被覆盖，
+        所以安装/更新后下次启动时会自动重建。
+
+        参数 app_dir: SillyTavern 目录路径
+        返回: ecosystem.config.cjs 的绝对路径
+        """
+        ecosystem_file = os.path.join(app_dir, 'ecosystem.config.cjs')
+
+        # 构建 proxy env
+        proxy_env = self._build_pm2_proxy_env()
+
+        # 构建 proxy env 部分
+        proxy_lines = []
+        if proxy_env:
+            for k, v in proxy_env.items():
+                v_escaped = v.replace("'", "\\'")
+                proxy_lines.append(f"      {k}: '{v_escaped}',")
+
+        proxy_section = '\n'.join(proxy_lines)
+
+        # config.yaml 路径
+        config_path = os.path.join(app_dir, 'config.yaml').replace('\\', '/')
+
+        # 拼接 CJS 内容
+        env_block = f"""      NODE_ENV: 'production',
+{proxy_section}""" if proxy_env else "      NODE_ENV: 'production'"
+
+        cjs_content = f"""module.exports = {{
+  apps: [{{
+    name: '{self.PM2_APP_NAME}',
+    script: './server.js',
+    args: '--configPath {config_path}',
+    cwd: __dirname,
+    interpreter: 'none',
+    env: {{
+{env_block}
+    }},
+    watch: false,
+    autorestart: true
+  }}]
+}};
+"""
+
+        with open(ecosystem_file, 'w', encoding='utf-8') as f:
+            f.write(cjs_content)
+
+        return ecosystem_file
+
+        # 写入文件
+        with open(ecosystem_file, 'w', encoding='utf-8') as f:
+            f.write(cjs_content)
+
+        return ecosystem_file
+
     # ==================== PM2 相关 ====================
 
     PM2_APP_NAME = 'stl_sillytavern'  # PM2 进程唯一标识，不可修改
@@ -463,18 +561,38 @@ class stl_main:
         if not os.path.isdir(app_dir):
             return {'status': False, 'msg': 'SillyTavern 目录不存在: ' + app_dir}
 
-        # 检查是否已在运行
+        # 前置检查：验证酒馆是否已安装
+        install_check = self.is_st_installed({'st_path': app_dir})
+        if not install_check.get('installed'):
+            return {'status': False, 'msg': 'SillyTavern 未安装，无法启动。请先完成安装。'}
+
+        # 检查是否已在运行（必须是 online 状态，stopped 状态不算）
         check = public.ExecShell('pm2 jlist')
+        pm2_exists = False
         try:
             import json as _json
             processes = _json.loads(check[0]) if check[0] else []
             for proc in processes:
                 if proc.get('name') == self.PM2_APP_NAME:
-                    return {'status': True, 'msg': 'SillyTavern 已在运行中（PID: ' + str(proc.get('pid', '')) + '）'}
+                    pm2_exists = True
+                    status = proc.get('pm2_env', {}).get('status', '')
+                    if status == 'online':
+                        return {'status': True, 'msg': 'SillyTavern 已在运行中（PID: ' + str(proc.get('pid', '')) + '）'}
+                    # 进程存在但不是 online 状态，记录下来后面用 restart
         except Exception:
             pass
 
-        cmd = 'pm2 start server.js --name ' + self.PM2_APP_NAME + ' --cwd "' + app_dir + '"'
+        # 确保有 ecosystem.config.cjs
+        ecosystem_file = self._ensure_ecosystem_config(app_dir)
+
+        # 清空旧日志
+        public.ExecShell('pm2 flush ' + self.PM2_APP_NAME)
+
+        # 进程已存在（但停止了）→ restart；不存在 → start
+        if pm2_exists:
+            cmd = 'pm2 restart ' + self.PM2_APP_NAME
+        else:
+            cmd = 'pm2 start "' + ecosystem_file + '"'
         result = public.ExecShell(cmd)
         out = (result[0] or '').strip()
         err = (result[1] or '').strip()
@@ -499,26 +617,33 @@ class stl_main:
         """重启 PM2 管理的 SillyTavern 进程（pm2 restart）
 
         参数 args:
-          - app_dir: SillyTavern 项目目录（可选，重启时不影响 cwd）
+          - app_dir: SillyTavern 项目目录（可选）
         返回: { status, msg }
-        """
-        # 先检查进程是否存在
-        check = public.ExecShell('pm2 jlist')
-        try:
-            import json as _json
-            processes = _json.loads(check[0]) if check[0] else []
-            found = False
-            for proc in processes:
-                if proc.get('name') == self.PM2_APP_NAME:
-                    found = True
-                    break
-            if not found:
-                # 进程不存在，尝试启动
-                return self.pm2_start(args)
-        except Exception:
-            pass
 
-        cmd = 'pm2 restart ' + self.PM2_APP_NAME
+        注意：每次重启都会重新生成 ecosystem.config.cjs，确保代理等设置是最新的。
+        """
+        app_dir = (args.get('app_dir') or '').strip()
+        if not app_dir:
+            app_dir = self.__get_config('sillytavern_path') or sillyTavern_path
+
+        if not os.path.isdir(app_dir):
+            return {'status': False, 'msg': 'SillyTavern 目录不存在: ' + app_dir}
+
+        # 前置检查：验证酒馆是否已安装
+        install_check = self.is_st_installed({'st_path': app_dir})
+        if not install_check.get('installed'):
+            return {'status': False, 'msg': 'SillyTavern 未安装，无法重启。请先完成安装。'}
+
+        # 重新生成 ecosystem 配置（覆盖旧文件，确保最新代理设置生效）
+        ecosystem_file = self._ensure_ecosystem_config(app_dir)
+
+        # 先删除旧进程，再用新配置启动
+        public.ExecShell('pm2 delete ' + self.PM2_APP_NAME)
+
+        # 清空旧日志
+        public.ExecShell('pm2 flush ' + self.PM2_APP_NAME)
+
+        cmd = 'pm2 start "' + ecosystem_file + '"'
         result = public.ExecShell(cmd)
         out = (result[0] or '').strip()
         err = (result[1] or '').strip()
@@ -554,42 +679,264 @@ class stl_main:
             return {'status': False, 'msg': '删除失败: ' + err}
         return {'status': True, 'msg': 'SillyTavern 进程已从 PM2 移除'}
 
-    def pm2_logs(self, args):
-        """获取 PM2 管理的 SillyTavern 最近日志
+    def pm2_reload(self, args):
+        """优雅重载 PM2 管理的 SillyTavern（pm2 reload）
+
+        对于 fork 模式，会先重新生成 ecosystem.config.cjs，再 delete + start。
+        确保代理等设置变更后能生效。
 
         参数 args:
-          - lines: 行数，默认 200
-          - type: 'out' | 'err' | 'all'，默认 'all'
-        返回: { status, logs, type }
+          - app_dir: SillyTavern 项目目录（可选）
+        返回: { status, msg }
         """
-        import json as _json
-        lines = int(args.get('lines') or 200)
-        log_type = (args.get('type') or 'all').strip()
+        app_dir = (args.get('app_dir') or '').strip()
+        if not app_dir:
+            app_dir = self.__get_config('sillytavern_path') or sillyTavern_path
 
-        # 检查进程是否存在
+        if not os.path.isdir(app_dir):
+            return {'status': False, 'msg': 'SillyTavern 目录不存在: ' + app_dir}
+
+        # 前置检查：验证酒馆是否已安装
+        install_check = self.is_st_installed({'st_path': app_dir})
+        if not install_check.get('installed'):
+            return {'status': False, 'msg': 'SillyTavern 未安装，无法重载。请先完成安装。'}
+
+        # 重新生成 ecosystem 配置（覆盖旧文件，确保最新代理设置生效）
+        ecosystem_file = self._ensure_ecosystem_config(app_dir)
+
+        # 先删除旧进程，再用新配置启动
+        public.ExecShell('pm2 delete ' + self.PM2_APP_NAME)
+
+        # 清空旧日志
+        public.ExecShell('pm2 flush ' + self.PM2_APP_NAME)
+
+        cmd = 'pm2 start "' + ecosystem_file + '"'
+        result = public.ExecShell(cmd)
+        out = (result[0] or '').strip()
+        err = (result[1] or '').strip()
+        if err and 'Error' in err:
+            return {'status': False, 'msg': '重载失败: ' + err}
+        return {'status': True, 'msg': 'SillyTavern 已重载'}
+
+    def pm2_logs(self, args):
+        """增量获取 PM2 日志（只返回新增行）
+
+        参数 args:
+          - type: 'out' | 'err'，必填
+          - reset: '1' 表示重置位置，重新读取全部历史
+        返回: { status, lines: [{time, content, type}], hasMore }
+        """
+        import os
+        import json as _json
+
+        log_type = (args.get('type') or '').strip()
+        do_reset = args.get('reset') == '1'
+
+        if log_type not in ('out', 'err'):
+            return {'status': False, 'msg': 'type 参数必填，可选值: out, err', 'lines': [], 'running': False}
+
+        # 获取日志文件路径
+        log_path = self._get_pm2_log_path(log_type)
+        if not os.path.exists(log_path):
+            # 返回更详细的错误信息
+            return {'status': False, 'msg': f'日志文件不存在: {log_path}', 'lines': [], 'debug_path': log_path, 'running': False}
+
+        # 检查进程是否存在，并获取运行状态
         check = public.ExecShell('pm2 jlist')
+        process_running = False
         try:
             processes = _json.loads(check[0]) if check[0] else []
-            found = False
-            for proc in processes:
-                if proc.get('name') == self.PM2_APP_NAME:
-                    found = True
+            for p in processes:
+                if p.get('name') == self.PM2_APP_NAME:
+                    status = p.get('pm2_env', {}).get('status', '')
+                    process_running = (status == 'online')
                     break
-            if not found:
-                return {'status': False, 'msg': 'PM2 中未找到 SillyTavern 进程', 'logs': '', 'type': log_type}
         except Exception:
             pass
 
-        if log_type == 'err':
-            cmd = 'pm2 logs ' + self.PM2_APP_NAME + ' --err --nostream --lines ' + str(lines)
-        elif log_type == 'out':
-            cmd = 'pm2 logs ' + self.PM2_APP_NAME + ' --out --nostream --lines ' + str(lines)
-        else:
-            cmd = 'pm2 logs ' + self.PM2_APP_NAME + ' --nostream --lines ' + str(lines)
+        try:
+            stat = os.stat(log_path)
+            inode = stat.st_ino
+            size = stat.st_size
+        except Exception:
+            return {'status': False, 'msg': '无法读取日志文件', 'lines': [], 'running': process_running}
 
-        result = public.ExecShell(cmd)
-        logs = (result[0] or '').strip()
-        return {'status': True, 'logs': logs, 'type': log_type}
+        # 读取文件全部内容（PM2 日志是追加模式，文件不大）
+        try:
+            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+        except Exception:
+            return {'status': False, 'msg': '无法读取日志内容', 'lines': [], 'running': process_running}
+
+        all_lines = content.split('\n')
+        total_lines = len(all_lines)
+
+        # 日志轮转检测：inode 变化 → 重置
+        if log_type in self._log_positions:
+            old_inode, old_size, old_line_count = self._log_positions[log_type]
+            if inode != old_inode:
+                # 文件被重建（清空重建），重置位置
+                do_reset = True
+
+        if do_reset:
+            self._log_positions[log_type] = (inode, size, 0)
+
+        # 确定起始行
+        start_pos = 0
+        if log_type in self._log_positions:
+            start_pos = self._log_positions[log_type][2]
+
+        # 没有新增行
+        if start_pos >= total_lines:
+            self._log_positions[log_type] = (inode, size, total_lines)
+            return {'status': True, 'lines': [], 'hasMore': False, 'running': process_running}
+
+        # 增量获取新行
+        new_lines = all_lines[start_pos:]
+        parsed = []
+        for line in new_lines:
+            line = line.strip()
+            if not line:
+                continue
+            # 解析时间戳（PM2 格式: "YY/MM/DD HH:MM:SS|name|msg"）
+            time_str, msg = self._parse_pm2_line(line, log_type)
+            parsed.append({
+                'time': time_str,
+                'content': msg,
+                'raw': line
+            })
+
+        # 更新位置
+        self._log_positions[log_type] = (inode, size, total_lines)
+
+        return {'status': True, 'lines': parsed, 'hasMore': len(parsed) > 0, 'running': process_running}
+
+    def _get_pm2_log_path(self, log_type):
+        """获取 PM2 日志文件路径（通过 pm2 jlist 获取精准路径）"""
+        import json
+
+        res = public.ExecShell('pm2 jlist')
+        if res[0]:
+            try:
+                apps = json.loads(res[0])
+                for app in apps:
+                    if app.get('name') == self.PM2_APP_NAME:
+                        if log_type == 'err':
+                            return app.get('pm2_env', {}).get('pm_err_log_path', '')
+                        else:
+                            return app.get('pm2_env', {}).get('pm_out_log_path', '')
+            except Exception:
+                pass  # 解析失败则降级
+
+        # 降级方案：pm2 report --json 获取完整 JSON，Python 解析
+        import os
+        result = public.ExecShell('pm2 report --json 2>/dev/null')
+        pm2_home = None
+        if result[0]:
+            try:
+                report = json.loads(result[0])
+                # pm2 report 的 JSON 结构中 HOME 字段位置可能不同，尝试多个 key
+                pm2_home = (
+                    report.get('GITHUB', {}).get('HOME') or
+                    report.get('HOME') or
+                    (report.get('God', {}).get('PM2_HOME') if isinstance(report.get('God'), dict) else None)
+                )
+            except Exception:
+                pass
+        if not pm2_home:
+            pm2_home = os.path.expanduser('~/.pm2')
+
+        return os.path.join(pm2_home, 'logs',
+            self.PM2_APP_NAME + ('-error.log' if log_type == 'err' else '-out.log'))
+
+    def _parse_pm2_line(self, line, log_type):
+        """解析单行 PM2 日志，返回 (时间字符串, 消息内容)"""
+        import re
+        # PM2 格式: "YY/MM/DD HH:MM:SS|METADATA|实际日志内容"
+        m = re.match(r'^(\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2})\|([^|]+)\|(.*)$', line)
+        if m:
+            time_str = m.group(1)
+            # 去掉 ANSI 颜色码
+            msg = re.sub(r'\x1b\[[0-9;]*m', '', m.group(3))
+            return time_str, msg.strip()
+        # 无法解析的直接返回原文
+        return '', re.sub(r'\x1b\[[0-9;]*m', '', line)
+
+    def clear_pm2_logs(self, args):
+        """清空 PM2 的 SillyTavern 日志文件
+
+        注意：必须用 pm2 flush，不能直接删除/截断文件，否则 PM2 文件句柄丢失不再写日志。
+
+        返回: { status, msg }
+        """
+        result = public.ExecShell('pm2 flush ' + self.PM2_APP_NAME)
+        out = (result[0] or '').strip()
+        err = (result[1] or '').strip()
+        if err and 'Error' in err:
+            return {'status': False, 'msg': '清空日志失败: ' + err}
+        return {'status': True, 'msg': '日志已清空（已刷新缓冲区）'}
+
+    def get_pm2_log_paths(self, args):
+        """获取 PM2 日志文件路径
+
+        返回: { status, out_log, err_log, home_dir }
+        """
+        try:
+            import os
+            import json
+
+            # 优先通过 pm2 jlist 获取精准路径
+            res = public.ExecShell('pm2 jlist')
+            if res[0]:
+                try:
+                    apps = json.loads(res[0])
+                    for app in apps:
+                        if app.get('name') == self.PM2_APP_NAME:
+                            out_log = app.get('pm2_env', {}).get('pm_out_log_path', '')
+                            err_log = app.get('pm2_env', {}).get('pm_err_log_path', '')
+                            home_dir = os.path.dirname(os.path.dirname(out_log)) if out_log else ''
+                            return {
+                                'status': True,
+                                'out_log': out_log,
+                                'err_log': err_log,
+                                'home_dir': home_dir
+                            }
+                except Exception:
+                    pass  # 解析失败则降级
+
+            # 降级方案：pm2 report --json 获取完整 JSON，Python 解析
+            result = public.ExecShell('pm2 report --json 2>/dev/null')
+            pm2_home = None
+            if result[0]:
+                try:
+                    report = json.loads(result[0])
+                    pm2_home = (
+                        report.get('GITHUB', {}).get('HOME') or
+                        report.get('HOME') or
+                        (report.get('God', {}).get('PM2_HOME') if isinstance(report.get('God'), dict) else None)
+                    )
+                except Exception:
+                    pass
+            if not pm2_home:
+                pm2_home = os.path.expanduser('~/.pm2')
+
+            out_log = os.path.join(pm2_home, 'logs', self.PM2_APP_NAME + '-out.log')
+            err_log = os.path.join(pm2_home, 'logs', self.PM2_APP_NAME + '-error.log')
+
+            return {
+                'status': True,
+                'out_log': out_log,
+                'err_log': err_log,
+                'home_dir': pm2_home
+            }
+        except Exception as e:
+            return {
+                'status': False,
+                'msg': str(e),
+                'out_log': '',
+                'err_log': '',
+                'home_dir': ''
+            }
 
     def pm2_status(self, args):
         """获取 SillyTavern 在 PM2 中的运行状态
@@ -620,6 +967,106 @@ class stl_main:
                 return {'status': True, 'running': running, 'info': info}
 
         return {'status': True, 'running': False, 'info': None, 'msg': 'PM2 中未找到 SillyTavern 进程'}
+
+    def start_service(self, args):
+        """启动 SillyTavern 服务（别名方法，内部调用 pm2_start）
+        
+        返回: { status, msg, url }
+        """
+        # 先检查酒馆是否安装
+        check_res = self.is_st_installed({})
+        if not check_res.get('installed'):
+            return {'status': False, 'msg': 'SillyTavern 未安装，请先安装'}
+        
+        # 调用 pm2_start
+        result = self.pm2_start(args)
+        
+        # 如果启动成功，构建访问URL
+        if result.get('status'):
+            mode = self.__get_config('access_mode') or 'wan'
+            url = self._build_access_url(mode)
+            result['url'] = url
+        
+        return result
+
+    def stop_service(self, args):
+        """停止 SillyTavern 服务（别名方法，内部调用 pm2_stop）
+        
+        返回: { status, msg }
+        """
+        return self.pm2_stop(args)
+
+    def _build_access_url(self, mode):
+        """构建访问URL"""
+        import socket
+        hostname = socket.gethostname()
+        if mode == 'lan':
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(('8.8.8.8', 80))
+                ip = s.getsockname()[0]
+            except Exception:
+                ip = '127.0.0.1'
+            finally:
+                s.close()
+            port = self.__get_config('tavern_port') or '8000'
+            return f'http://{ip}:{port}'
+        else:
+            port = self.__get_config('tavern_port') or '8000'
+            return f'http://localhost:{port}'
+
+    def get_access_url(self, args):
+        """获取访问 URL（供前端状态刷新时调用）
+
+        参数 args:
+          - mode: 'lan' | 'wan'，默认读取配置
+        返回: { status, url }
+        """
+        mode = (args.get('mode') or self.__get_config('access_mode') or 'wan').strip()
+        try:
+            url = self._build_access_url(mode)
+            return {'status': True, 'url': url}
+        except Exception as e:
+            return {'status': False, 'msg': str(e), 'url': ''}
+
+    def get_startup_info(self, args):
+        """获取启动前的环境信息
+        
+        返回: { 
+            status, 
+            tavern_installed, 
+            tavern_version, 
+            node_version, 
+            git_version,
+            pm2_installed,
+            pm2_version,
+            st_path
+        }
+        """
+        # 检查酒馆安装状态
+        tavern_check = self.is_st_installed({})
+        
+        # 获取Node版本
+        node_result = public.ExecShell('node -v')
+        node_version = (node_result[0] or '').strip()
+        
+        # 获取Git版本
+        git_result = public.ExecShell('git --version')
+        git_version = (git_result[0] or '').strip()
+        
+        # 检查PM2
+        pm2_check = self.is_pm2_installed({})
+        
+        return {
+            'status': True,
+            'tavern_installed': tavern_check.get('installed', False),
+            'tavern_version': tavern_check.get('version', ''),
+            'node_version': node_version,
+            'git_version': git_version,
+            'pm2_installed': pm2_check.get('installed', False),
+            'pm2_version': pm2_check.get('version', ''),
+            'st_path': tavern_check.get('path', '')
+        }
 
     # ==================== SillyTavern 相关 ====================
 
