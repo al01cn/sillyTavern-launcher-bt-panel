@@ -559,7 +559,7 @@ class stl_main:
 
     # ==================== SillyTavern 相关 ====================
 
-    SILLYTAVERN_GITHUB_URL = 'https://ghfast.top/https://github.com/SillyTavern/SillyTavern.git'
+    SILLYTAVERN_GITHUB_URL = 'https://github.com/SillyTavern/SillyTavern.git'
 
     def get_st_version(self, args):
         """获取 SillyTavern 版本
@@ -810,10 +810,16 @@ class stl_main:
 
                 # 构建 clone 地址（可能加速代理）
                 repo_url = self.SILLYTAVERN_GITHUB_URL
-                proxy_url = self.__get_config('github_proxy')
-                if proxy_url:
-                    repo_url = proxy_url.rstrip('/') + '/SillyTavern/SillyTavern.git'
-                    _write_line('[INFO] 使用 GitHub 加速: ' + proxy_url)
+                proxy_config = self.__get_config('github_proxy')
+                if proxy_config and isinstance(proxy_config, dict):
+                    # 检查是否启用了代理
+                    if proxy_config.get('enabled', False):
+                        proxy_url = proxy_config.get('url', '').strip()
+                        if proxy_url:
+                            # 确保 URL 格式正确
+                            proxy_url = proxy_url.rstrip('/')
+                            repo_url = proxy_url + '/https://github.com/SillyTavern/SillyTavern.git'
+                            _write_line('[INFO] 使用 GitHub 加速: ' + proxy_url)
 
                 _write_line('[INFO] 克隆仓库: ' + repo_url)
 
@@ -1024,6 +1030,45 @@ class stl_main:
             return {'status': True, 'msg': 'SillyTavern 已删除: ' + st_path}
         except Exception as e:
             return {'status': False, 'msg': '删除失败: ' + str(e)}
+
+    def cancel_install(self, args):
+        """取消安装并清理已创建的目录
+
+        当用户手动取消安装时，清理已创建的部分文件。
+
+        参数 args:
+          - install_path: 安装路径（可选，默认 stl_path/sillyTavern）
+        返回: { status, msg }
+        """
+        import shutil
+
+        install_path = (args.get('install_path') or '').strip()
+        if not install_path:
+            install_path = sillyTavern_path
+
+        # 检查目录是否存在
+        if not os.path.isdir(install_path):
+            return {'status': True, 'msg': '目录不存在，无需清理'}
+
+        try:
+            # 先尝试停止可能正在运行的 PM2 进程
+            public.ExecShell('pm2 delete ' + self.PM2_APP_NAME + ' 2>/dev/null || true')
+
+            # 删除安装目录
+            shutil.rmtree(install_path, ignore_errors=True)
+
+            # 清理锁文件
+            log_dir = os.path.join(stl_path, 'logs')
+            lock_file = os.path.join(log_dir, 'install_st.log.lock')
+            if os.path.exists(lock_file):
+                try:
+                    os.remove(lock_file)
+                except Exception:
+                    pass
+
+            return {'status': True, 'msg': '已清理安装目录: ' + install_path}
+        except Exception as e:
+            return {'status': False, 'msg': '清理失败: ' + str(e)}
 
     def update_sillytavern(self, args):
         """更新 SillyTavern（git pull + npm install）
@@ -1957,3 +2002,566 @@ class stl_main:
         results.sort(key=lambda r: key_order.get(r['key'], 99))
 
         return {'status': True, 'results': results}
+
+    # ==================== SillyTavern 实例管理 ====================
+
+    def add_st_instance(self, args):
+        """添加 SillyTavern 实例（手动添加）
+
+        验证流程：
+        1. 验证 server.js 存在
+        2. 读取 package.json，验证 name 字段为 SillyTavern（大小写不敏感）
+        3. 检查 git 环境完整性
+        4. 如 git 损坏，自动修复
+        5. 检查 node_modules，缺失则自动安装
+        6. 生成唯一 ID，写入 config.json
+
+        参数 args:
+          - st_path: server.js 所在目录路径
+        返回: { status, msg, instance }
+        """
+        import uuid
+        import time
+        import re
+
+        st_path = (args.get('st_path') or '').strip()
+        if not st_path:
+            return {'status': False, 'msg': '路径不能为空'}
+
+        # 规范化路径
+        st_path = os.path.normpath(st_path)
+
+        # 检查是否为默认安装位置（在线下载管理的位置）
+        default_path = os.path.normpath(sillyTavern_path)
+        if st_path == default_path:
+            return {
+                'status': False,
+                'msg': '不能添加默认安装位置（' + default_path + '）。\n该位置由"在线下载"功能管理，如需使用请直接安装。'
+            }
+
+        # 1. 验证 server.js 存在
+        server_js = os.path.join(st_path, 'server.js')
+        if not os.path.isfile(server_js):
+            return {'status': False, 'msg': '未找到 server.js 文件，请选择正确的 SillyTavern 目录'}
+
+        # 2. 验证 package.json
+        pkg_file = os.path.join(st_path, 'package.json')
+        if not os.path.isfile(pkg_file):
+            return {'status': False, 'msg': '未找到 package.json 文件，该目录不是有效的 SillyTavern 安装'}
+
+        try:
+            content = public.ReadFile(pkg_file)
+            if not content:
+                return {'status': False, 'msg': 'package.json 文件为空'}
+
+            pkg_data = json.loads(content)
+            name_field = pkg_data.get('name', '')
+
+            # 验证 name 字段（大小写不敏感）
+            if name_field.lower() != 'sillytavern':
+                return {'status': False, 'msg': 'package.json 中的 name 字段不是 "SillyTavern"，当前值为: ' + name_field}
+
+            version = pkg_data.get('version', 'unknown')
+        except json.JSONDecodeError as e:
+            return {'status': False, 'msg': 'package.json 格式错误: ' + str(e)}
+        except Exception as e:
+            return {'status': False, 'msg': '读取 package.json 失败: ' + str(e)}
+
+        # 3. 检查并修复 git 环境
+        git_check = self._check_git_environment(st_path, version)
+        if not git_check['valid']:
+            # 尝试修复
+            repair_result = self._repair_git_environment(st_path, version)
+            if not repair_result['status']:
+                return {'status': False, 'msg': 'Git 环境损坏且修复失败: ' + repair_result.get('msg', '')}
+
+        # 4. 检查并安装依赖
+        deps_check = self._check_and_install_deps(st_path)
+        if not deps_check['status']:
+            return {'status': False, 'msg': '依赖安装失败: ' + deps_check.get('msg', '')}
+
+        # 5. 获取分支信息
+        branch = 'release'  # 默认分支
+        try:
+            result = public.ExecShell('cd "{}" && git rev-parse --abbrev-ref HEAD'.format(st_path))
+            if result[0]:
+                branch = result[0].strip()
+        except Exception:
+            pass
+
+        # 6. 生成实例 ID 并保存
+        instance_id = str(uuid.uuid4())[:8]
+        instance = {
+            'id': instance_id,
+            'path': st_path,
+            'name': 'SillyTavern',
+            'version': version,
+            'branch': branch,
+            'added_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'is_default': False
+        }
+
+        # 获取现有实例列表
+        instances = self.__get_config('sillytavern_instances') or []
+
+        # 检查是否已存在相同路径的实例
+        for inst in instances:
+            if inst['path'] == st_path:
+                return {'status': False, 'msg': '该路径已在实例列表中: ' + st_path}
+
+        # 如果是第一个实例，设为默认
+        if not instances:
+            instance['is_default'] = True
+            self.__set_config('sillytavern_path', st_path)
+
+        instances.append(instance)
+        self.__set_config('sillytavern_instances', instances)
+
+        return {'status': True, 'msg': '实例添加成功', 'instance': instance}
+
+    def remove_st_instance(self, args):
+        """删除 SillyTavern 实例（仅从配置中移除，不删除物理文件）
+
+        参数 args:
+          - instance_id: 实例 ID
+        返回: { status, msg }
+        """
+        instance_id = (args.get('instance_id') or '').strip()
+        if not instance_id:
+            return {'status': False, 'msg': '实例 ID 不能为空'}
+
+        instances = self.__get_config('sillytavern_instances') or []
+
+        # 查找并移除实例
+        found = False
+        new_instances = []
+        removed_instance = None
+
+        for inst in instances:
+            if inst['id'] == instance_id:
+                found = True
+                removed_instance = inst
+            else:
+                new_instances.append(inst)
+
+        if not found:
+            return {'status': False, 'msg': '未找到指定的实例'}
+
+        # 如果删除的是默认实例，将第一个剩余实例设为默认
+        if removed_instance and removed_instance.get('is_default') and new_instances:
+            new_instances[0]['is_default'] = True
+            self.__set_config('sillytavern_path', new_instances[0]['path'])
+        elif not new_instances:
+            # 没有剩余实例，清空当前路径
+            self.__set_config('sillytavern_path', '')
+
+        self.__set_config('sillytavern_instances', new_instances)
+
+        return {'status': True, 'msg': '实例已移除'}
+
+    def switch_st_instance(self, args):
+        """切换当前激活的 SillyTavern 实例
+
+        参数 args:
+          - instance_id: 实例 ID
+        返回: { status, msg, path }
+        """
+        instance_id = (args.get('instance_id') or '').strip()
+        if not instance_id:
+            return {'status': False, 'msg': '实例 ID 不能为空'}
+
+        instances = self.__get_config('sillytavern_instances') or []
+
+        # 查找目标实例
+        target = None
+        for inst in instances:
+            if inst['id'] == instance_id:
+                target = inst
+                break
+
+        if not target:
+            return {'status': False, 'msg': '未找到指定的实例'}
+
+        # 验证路径有效性
+        if not os.path.isdir(target['path']):
+            return {'status': False, 'msg': '实例路径不存在: ' + target['path']}
+
+        # 更新默认标记
+        for inst in instances:
+            inst['is_default'] = (inst['id'] == instance_id)
+
+        self.__set_config('sillytavern_instances', instances)
+        self.__set_config('sillytavern_path', target['path'])
+
+        return {'status': True, 'msg': '已切换到: ' + target['path'], 'path': target['path']}
+
+    def list_st_instances(self, args):
+        """获取所有 SillyTavern 实例列表
+
+        返回: { status, instances: [{ id, path, version, branch, added_at, is_default }] }
+        """
+        instances = self.__get_config('sillytavern_instances') or []
+
+        # 验证每个实例的路径是否仍然有效
+        valid_instances = []
+        for inst in instances:
+            if os.path.isdir(inst['path']):
+                # 重新读取版本号（可能已更新）
+                try:
+                    pkg_file = os.path.join(inst['path'], 'package.json')
+                    if os.path.isfile(pkg_file):
+                        content = public.ReadFile(pkg_file)
+                        if content:
+                            import re
+                            match = re.search(r'"version"\s*:\s*"([^"]+)"', content)
+                            if match:
+                                inst['version'] = match.group(1)
+                except Exception:
+                    pass
+                valid_instances.append(inst)
+
+        # 如果实例列表有变化，更新配置
+        if len(valid_instances) != len(instances):
+            self.__set_config('sillytavern_instances', valid_instances)
+
+        return {'status': True, 'instances': valid_instances}
+
+    def get_latest_online_version(self, args):
+        """获取在线最新版本信息（带缓存）
+
+        通过 GitHub API 获取最新 release 版本
+        缓存时间：1 小时（3600 秒）
+        返回: { status, version, commit_hash, date, download_url, cached }
+        """
+        import time as time_module
+
+        # 缓存配置
+        CACHE_KEY = 'github_api_cache'
+        CACHE_TTL = 3600  # 缓存有效期 1 小时（秒）
+
+        try:
+            # 1. 尝试从缓存读取
+            cache_data = self.__get_config(CACHE_KEY)
+            if cache_data and isinstance(cache_data, dict):
+                cached_time = cache_data.get('cached_at', 0)
+                current_time = time_module.time()
+
+                # 检查缓存是否过期
+                if current_time - cached_time < CACHE_TTL:
+                    # 缓存有效，直接返回
+                    result = cache_data.get('data', {})
+                    result['cached'] = True
+                    result['cache_time'] = cached_time
+                    return result
+
+            # 2. 缓存过期或不存在，调用 GitHub API
+            # 导入 Python 3 的 urllib
+            try:
+                import urllib.request as urllib_request
+            except ImportError:
+                # Python 2 兼容
+                import urllib2 as urllib_request
+
+            import ssl
+
+            # GitHub API 地址（不能使用加速代理）
+            api_url = 'https://api.github.com/repos/SillyTavern/SillyTavern/releases/latest'
+
+            # 构建请求
+            req = urllib_request.Request(api_url)
+            req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+            req.add_header('Accept', 'application/vnd.github.v3+json')
+
+            # 忽略 SSL 证书验证
+            context = ssl._create_unverified_context()
+
+            # 发送请求
+            response = urllib_request.urlopen(req, timeout=10, context=context)
+            data = json.loads(response.read().decode('utf-8'))
+
+            # 解析版本信息
+            version = data.get('tag_name', '').replace('v', '')
+            if not version:
+                version = data.get('name', 'latest')
+
+            commit_hash = data.get('target_commitish', '')
+            published_at = data.get('published_at', '')
+
+            # 格式化日期
+            if published_at:
+                # GitHub API 返回的格式: 2024-01-15T10:30:00Z
+                date_str = published_at.replace('T', ' ').replace('Z', '')
+            else:
+                date_str = time.strftime('%Y-%m-%d %H:%M:%S')
+
+            # 获取下载链接
+            download_url = data.get('html_url', '')
+
+            # 构建结果数据
+            result = {
+                'status': True,
+                'version': version,
+                'commit_hash': commit_hash,
+                'date': date_str,
+                'download_url': download_url,
+                'description': data.get('body', '')[:200] if data.get('body') else '',
+                'cached': False,
+                'cache_time': time_module.time()
+            }
+
+            # 3. 保存到缓存
+            cache_data = {
+                'data': result,
+                'cached_at': time_module.time()
+            }
+            self.__set_config(CACHE_KEY, cache_data)
+
+            return result
+
+        except Exception as e:
+            error_msg = str(e)
+            
+            # 如果 API 调用失败，但有缓存，返回过期的缓存数据
+            cache_data = self.__get_config(CACHE_KEY)
+            if cache_data and isinstance(cache_data, dict):
+                result = cache_data.get('data', {})
+                result['cached'] = True
+                result['cache_expired'] = True
+                result['msg'] = '使用缓存数据（API 调用失败）'
+                return result
+            
+            # 没有缓存，返回错误
+            # 提供更友好的错误提示
+            if 'HTTP Error 403' in error_msg:
+                error_msg = 'GitHub API 访问受限（403），请稍后重试'
+            elif 'HTTP Error 404' in error_msg:
+                error_msg = '未找到版本信息（404）'
+            elif 'timeout' in error_msg.lower():
+                error_msg = '请求超时，请检查网络连接'
+            elif 'urlopen error' in error_msg or 'network' in error_msg.lower():
+                error_msg = '网络错误，无法访问 GitHub API'
+            
+            return {'status': False, 'msg': '获取版本信息失败: ' + error_msg}
+
+    def _check_git_environment(self, st_path, version):
+        """检查 git 环境是否完整
+
+        返回: { valid: bool, msg: str }
+        """
+        git_dir = os.path.join(st_path, '.git')
+
+        # 检查 .git 目录是否存在
+        if not os.path.exists(git_dir) or not os.path.isdir(git_dir):
+            return {'valid': False, 'msg': '缺少 .git 目录'}
+
+        # 检查 .git/config 是否存在
+        git_config = os.path.join(git_dir, 'config')
+        if not os.path.isfile(git_config):
+            return {'valid': False, 'msg': '.git/config 文件缺失'}
+
+        # 尝试验证 git 状态
+        try:
+            result = public.ExecShell('cd "{}" && git status'.format(st_path))
+            if result[1] and 'fatal' in result[1].lower():
+                return {'valid': False, 'msg': 'Git 环境损坏: ' + result[1][:100]}
+        except Exception:
+            return {'valid': False, 'msg': '无法执行 git 命令'}
+
+        return {'valid': True, 'msg': 'Git 环境正常'}
+
+    def _repair_git_environment(self, st_path, version):
+        """修复损坏的 git 环境
+
+        流程：
+        1. 备份重要数据目录
+        2. 删除损坏的 .git
+        3. 重新初始化 git 并拉取指定版本
+        4. 恢复用户数据
+
+        返回: { status, msg }
+        """
+        import shutil
+        import tempfile
+
+        try:
+            # 1. 创建临时备份目录
+            backup_dir = tempfile.mkdtemp(prefix='st_backup_')
+
+            # 需要保留的用户数据目录
+            data_dirs = ['data', 'public', 'config', 'User Data', 'thumbnails']
+            backed_up = []
+
+            for dir_name in data_dirs:
+                src = os.path.join(st_path, dir_name)
+                if os.path.exists(src):
+                    dst = os.path.join(backup_dir, dir_name)
+                    try:
+                        shutil.copytree(src, dst)
+                        backed_up.append(dir_name)
+                    except Exception as e:
+                        print('备份 {} 失败: {}'.format(dir_name, str(e)))
+
+            # 2. 删除损坏的 .git 目录
+            git_dir = os.path.join(st_path, '.git')
+            if os.path.exists(git_dir):
+                try:
+                    shutil.rmtree(git_dir)
+                except Exception as e:
+                    # 清理备份
+                    shutil.rmtree(backup_dir, ignore_errors=True)
+                    return {'status': False, 'msg': '删除损坏的 .git 失败: ' + str(e)}
+
+            # 3. 重新初始化 git 并克隆
+            public.ExecShell('cd "{}" && git init'.format(st_path))
+            public.ExecShell('cd "{}" && git remote add origin https://github.com/SillyTavern/SillyTavern.git'.format(st_path))
+
+            # 获取 GitHub 代理配置
+            github_proxy = self.__get_config('github_proxy') or {}
+            use_proxy = github_proxy.get('enabled', False)
+            proxy_url = github_proxy.get('url', 'https://ghfast.top/')
+
+            clone_url = 'https://github.com/SillyTavern/SillyTavern.git'
+            if use_proxy and proxy_url:
+                # 确保代理 URL 以 / 结尾
+                if not proxy_url.endswith('/'):
+                    proxy_url += '/'
+                clone_url = proxy_url + 'https://github.com/SillyTavern/SillyTavern.git'
+
+            # Fetch 指定分支
+            fetch_cmd = 'cd "{}" && git fetch --depth=1 origin release'.format(st_path)
+            if use_proxy:
+                fetch_cmd = 'GIT_SSL_NO_VERIFY=1 ' + fetch_cmd
+
+            result = public.ExecShell(fetch_cmd)
+            if result[1] and 'fatal' in result[1].lower():
+                shutil.rmtree(backup_dir, ignore_errors=True)
+                return {'status': False, 'msg': 'Git fetch 失败: ' + result[1][:200]}
+
+            # Checkout 到 FETCH_HEAD
+            public.ExecShell('cd "{}" && git checkout FETCH_HEAD'.format(st_path))
+
+            # 4. 恢复用户数据
+            for dir_name in backed_up:
+                src = os.path.join(backup_dir, dir_name)
+                dst = os.path.join(st_path, dir_name)
+                try:
+                    if os.path.exists(dst):
+                        shutil.rmtree(dst)
+                    shutil.copytree(src, dst)
+                except Exception as e:
+                    print('恢复 {} 失败: {}'.format(dir_name, str(e)))
+
+            # 5. 清理备份
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+            return {'status': True, 'msg': 'Git 环境修复成功'}
+
+        except Exception as e:
+            # 确保清理备份
+            try:
+                shutil.rmtree(backup_dir, ignore_errors=True)
+            except Exception:
+                pass
+            return {'status': False, 'msg': '修复过程出错: ' + str(e)}
+
+    def _check_and_install_deps(self, st_path):
+        """检查并安装依赖
+
+        返回: { status, installed, msg }
+        """
+        node_modules = os.path.join(st_path, 'node_modules')
+
+        # 如果 node_modules 存在，认为已安装
+        if os.path.exists(node_modules) and os.path.isdir(node_modules):
+            return {'status': True, 'installed': True, 'msg': '依赖已安装'}
+
+        # 执行 npm install
+        try:
+            log_dir = os.path.join(stl_path, 'logs')
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir, 0o755)
+
+            log_file = os.path.join(log_dir, 'npm_install_' + str(int(time.time())) + '.log')
+
+            # 获取网络代理配置
+            proxy_config = self.__get_config('proxy') or {}
+            proxy_mode = proxy_config.get('mode', 'none')
+
+            cmd = 'cd "{}" && npm install'.format(st_path)
+
+            # 设置代理
+            if proxy_mode == 'custom':
+                host = proxy_config.get('host', '')
+                port = proxy_config.get('port', '')
+                if host and port:
+                    proxy_str = 'http://{}:{}'.format(host, port)
+                    cmd = 'NPM_CONFIG_PROXY={} NPM_CONFIG_HTTPS_PROXY={} {}'.format(proxy_str, proxy_str, cmd)
+            elif proxy_mode == 'system':
+                # 使用系统环境变量，无需额外设置
+                pass
+
+            # 后台执行 npm install
+            with open(log_file, 'w') as f:
+                proc = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    cwd=st_path
+                )
+                proc.wait()
+
+            # 检查安装结果
+            if os.path.exists(node_modules):
+                return {'status': True, 'installed': True, 'msg': '依赖安装成功'}
+            else:
+                return {'status': False, 'installed': False, 'msg': '依赖安装完成但 node_modules 未生成'}
+
+        except Exception as e:
+            return {'status': False, 'installed': False, 'msg': '依赖安装失败: ' + str(e)}
+
+    # ==================== 兼容层方法（供前端旧代码调用）====================
+
+    def scan_versions(self, args):
+        """扫描本地版本（兼容旧接口，实际调用 list_st_instances）
+
+        返回: { status, data: [{ version, path, current }] }
+        """
+        result = self.list_st_instances(args)
+        if not result['status']:
+            return result
+
+        # 转换数据格式以适配前端
+        instances = result.get('instances', [])
+        current_path = self.__get_config('sillytavern_path') or ''
+
+        data = []
+        for inst in instances:
+            data.append({
+                'version': inst.get('version', 'unknown'),
+                'path': inst['path'],
+                'current': inst['path'] == current_path,
+                'id': inst.get('id', ''),
+                'branch': inst.get('branch', 'release')
+            })
+
+        return {'status': True, 'data': data}
+
+    def fetch_online_versions(self, args):
+        """获取在线版本列表（兼容旧接口，只返回最新版本）
+
+        返回: { status, data: [{ version, date, size }] }
+        """
+        result = self.get_latest_online_version(args)
+        if not result['status']:
+            return result
+
+        # 转换为列表格式
+        return {
+            'status': True,
+            'data': [{
+                'version': result.get('version', 'latest'),
+                'date': result.get('date', ''),
+                'size': 'N/A'
+            }]
+        }

@@ -8,7 +8,10 @@ var SillyTavern = (function () {
     "use strict";
 
     // 默认 GitHub 仓库地址
-    var GITHUB_URL = 'https://ghfast.top/https://github.com/SillyTavern/SillyTavern.git';
+    var GITHUB_URL = 'https://github.com/SillyTavern/SillyTavern.git';
+
+    // GitHub 最新版本 API
+    var GITHUB_LATEST_API = 'https://api.github.com/repos/SillyTavern/SillyTavern/releases/latest';
 
     // 轮询相关配置
     var POLL_INTERVAL = 800;      // 日志轮询间隔（毫秒）
@@ -199,6 +202,143 @@ var SillyTavern = (function () {
         }, function () {
             if (callback) callback({ status: false, is_latest: false, msg: '请求后端失败' });
         });
+    }
+
+    /**
+     * 8. 添加 SillyTavern 实例（手动添加）
+     *    用户选择 server.js 文件后，自动验证并添加到实例列表。
+     *
+     * @param {string}   stPath   server.js 所在目录路径
+     * @param {function} callback 回调 function(rdata)  { status, msg, instance }
+     */
+    function addInstance(stPath, callback) {
+        request_plugin('add_st_instance', { st_path: stPath }, function (rdata) {
+            if (rdata && rdata.status && rdata.instance) {
+                // 更新缓存
+                _updateInstancesCache();
+            }
+            if (callback) callback(rdata || { status: false, msg: '请求失败' });
+        }, function () {
+            if (callback) callback({ status: false, msg: '请求后端失败' });
+        });
+    }
+
+    /**
+     * 9. 删除 SillyTavern 实例（仅从配置中移除）
+     *
+     * @param {string}   instanceId 实例 ID
+     * @param {function} callback   回调 function(rdata)  { status, msg }
+     */
+    function removeInstance(instanceId, callback) {
+        request_plugin('remove_st_instance', { instance_id: instanceId }, function (rdata) {
+            if (rdata && rdata.status) {
+                // 更新缓存
+                _updateInstancesCache();
+            }
+            if (callback) callback(rdata || { status: false, msg: '请求失败' });
+        }, function () {
+            if (callback) callback({ status: false, msg: '请求后端失败' });
+        });
+    }
+
+    /**
+     * 10. 切换当前激活的 SillyTavern 实例
+     *
+     * @param {string}   instanceId 实例 ID
+     * @param {function} callback   回调 function(rdata)  { status, msg, path }
+     */
+    function switchInstance(instanceId, callback) {
+        request_plugin('switch_st_instance', { instance_id: instanceId }, function (rdata) {
+            if (rdata && rdata.status) {
+                // 更新当前实例 ID 缓存
+                CacheUtil.localSet('CURRENT_INSTANCE_ID', instanceId);
+                // 更新实例列表缓存
+                _updateInstancesCache();
+            }
+            if (callback) callback(rdata || { status: false, msg: '请求失败' });
+        }, function () {
+            if (callback) callback({ status: false, msg: '请求后端失败' });
+        });
+    }
+
+    /**
+     * 11. 获取所有 SillyTavern 实例列表
+     *
+     * @param {function} callback 回调 function(rdata)  { status, instances }
+     */
+    function listInstances(callback) {
+        request_plugin('list_st_instances', {}, function (rdata) {
+            if (rdata && rdata.status) {
+                // 更新缓存
+                CacheUtil.localSet('INSTANCES', rdata.instances);
+            }
+            if (callback) callback(rdata || { status: false, instances: [] });
+        }, function () {
+            if (callback) callback({ status: false, instances: [], msg: '请求后端失败' });
+        });
+    }
+
+    /**
+     * 12. 获取在线最新版本信息
+     *
+     * @param {function} callback 回调 function(rdata)  { status, version, commit_hash, date }
+     */
+    function getLatestOnlineVersion(callback) {
+        request_plugin('get_latest_online_version', {}, function (rdata) {
+            if (rdata && rdata.status) {
+                // 缓存版本信息（有效期 1 小时）
+                CacheUtil.localSet('ONLINE_VERSION', {
+                    data: rdata,
+                    timestamp: Date.now()
+                });
+            }
+            if (callback) callback(rdata || { status: false, msg: '请求失败' });
+        }, function () {
+            if (callback) callback({ status: false, msg: '请求后端失败' });
+        });
+    }
+
+    /**
+     * 13. 从缓存获取实例列表
+     *
+     * @returns {Array} 实例列表
+     */
+    function getCachedInstances() {
+        return CacheUtil.localGet('INSTANCES', []);
+    }
+
+    /**
+     * 14. 获取当前实例 ID
+     *
+     * @returns {string|null} 当前实例 ID
+     */
+    function getCurrentInstanceId() {
+        return CacheUtil.localGet('CURRENT_INSTANCE_ID', null);
+    }
+
+    /**
+     * 15. 从缓存获取在线版本信息
+     *
+     * @returns {Object|null} 版本信息或 null
+     */
+    function getCachedOnlineVersion() {
+        var cached = CacheUtil.localGet('ONLINE_VERSION', null);
+        if (!cached) return null;
+
+        // 检查缓存是否过期（1 小时）
+        if (Date.now() - cached.timestamp > 60 * 60 * 1000) {
+            CacheUtil.localRemove('ONLINE_VERSION');
+            return null;
+        }
+
+        return cached.data;
+    }
+
+    /**
+     * 内部方法：更新实例列表缓存
+     */
+    function _updateInstancesCache() {
+        listInstances(function() {}); // 静默更新
     }
 
     /**
@@ -394,6 +534,16 @@ var SillyTavern = (function () {
         deleteSillyTavern: deleteSillyTavern,
         updateSillyTavern: updateSillyTavern,
         checkUpdate: checkUpdate,
-        stopInstallPolling: stopInstallPolling
+        stopInstallPolling: stopInstallPolling,
+
+        // 实例管理方法（新增）
+        addInstance: addInstance,
+        removeInstance: removeInstance,
+        switchInstance: switchInstance,
+        listInstances: listInstances,
+        getLatestOnlineVersion: getLatestOnlineVersion,
+        getCachedInstances: getCachedInstances,
+        getCurrentInstanceId: getCurrentInstanceId,
+        getCachedOnlineVersion: getCachedOnlineVersion
     };
 })();

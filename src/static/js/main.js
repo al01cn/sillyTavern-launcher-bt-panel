@@ -143,6 +143,14 @@ return {
     downloadVersion: downloadVersion,
     switchMode: switchMode,
     
+    // 版本管理（新版本）
+    switchVersionTab: window.switchVersionTab,
+    addStInstance: window.addStInstance,
+    doSwitchInstance: window.doSwitchInstance,
+    doRemoveInstance: window.doRemoveInstance,
+    checkForUpdate: window.checkForUpdate,
+    installLatestVersion: window.installLatestVersion,
+    
     // 页面函数（从全局作用域获取）
     startService: window.startService,
     stopService: window.stopService,

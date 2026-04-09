@@ -1090,3 +1090,399 @@ button.stl-mode-btn.active i {
     color: #333;
     text-align: center;
 }
+
+/* ==================== 版本管理页面新样式 ==================== */
+
+/* 实例元信息 */
+.stl-version-meta {
+    font-size: 12px;
+    color: #999;
+    margin-top: 4px;
+}
+
+/* 在线安装卡片内部样式 */
+.stl-install-card-inner {
+    padding: 20px;
+}
+
+.stl-install-status {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.stl-install-status.installed {
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    border: 2px solid #38bdf8;
+}
+
+.stl-install-status.not-installed {
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+    border: 2px solid #fca5a5;
+}
+
+.stl-install-status i {
+    font-size: 48px;
+}
+
+.stl-install-status.installed i {
+    color: #0ea5e9;
+}
+
+.stl-install-status.not-installed i {
+    color: #ef4444;
+}
+
+.stl-install-status .status-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.stl-install-status.installed .status-title {
+    color: #0369a1;
+}
+
+.stl-install-status.not-installed .status-title {
+    color: #dc2626;
+}
+
+.stl-install-status .status-version {
+    font-size: 14px;
+    color: #666;
+}
+
+.stl-install-status .status-latest {
+    font-size: 13px;
+    color: #10b981;
+    margin-top: 3px;
+}
+
+.stl-install-status .status-update {
+    font-size: 13px;
+    color: #f59e0b;
+    margin-top: 3px;
+}
+
+.stl-install-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* 旋转动画（用于加载图标） */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+    display: inline-block;
+}
+
+/* ==================== 日志样式 ==================== */
+
+/* 日志容器 */
+#install-log-container,
+#update-log-container {
+    height: 400px;
+    overflow-y: auto;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 10px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+/* 日志行基础样式 */
+#install-log-container div,
+#update-log-container div {
+    margin: 2px 0;
+    padding: 2px 5px;
+    border-radius: 2px;
+}
+
+/* INFO 级别日志 */
+.log-info {
+    color: #4ec9b0;
+}
+
+/* SUCCESS 级别日志 */
+.log-success {
+    color: #4ec9b0;
+    font-weight: bold;
+}
+
+/* ERROR 级别日志 */
+.log-error {
+    color: #f44747;
+    font-weight: bold;
+}
+
+/* WARN 级别日志 */
+.log-warn {
+    color: #ffcc00;
+}
+
+/* PROGRESS 级别日志 */
+.log-progress {
+    color: #569cd6;
+}
+
+/* Git 命令输出 */
+.log-git {
+    color: #9cdcfe;
+}
+
+/* NPM 输出 */
+.log-npm {
+    color: #ce9178;
+}
+
+/* ==================== 文件夹选择器样式 ==================== */
+
+.folder-selector-container {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* 工具栏 */
+.fs-toolbar {
+    padding: 10px 15px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e5e5e5;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.fs-toolbar-label {
+    font-size: 12px;
+    color: #666;
+    margin-right: 4px;
+}
+
+.fs-toolbar .btn-xs {
+    padding: 3px 10px;
+    font-size: 12px;
+    border-radius: 3px;
+}
+
+/* 路径导航栏 */
+.fs-path-bar {
+    padding: 10px 15px;
+    background: #fff;
+    border-bottom: 1px solid #e5e5e5;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fs-path-icon {
+    font-size: 16px;
+    color: #20a53a;
+    flex-shrink: 0;
+}
+
+.fs-path-input {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 13px;
+    font-family: Consolas, Monaco, monospace;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.fs-path-input:focus {
+    border-color: #20a53a;
+    box-shadow: 0 0 0 2px rgba(32, 165, 58, 0.1);
+}
+
+.fs-path-bar .btn-success {
+    flex-shrink: 0;
+    padding: 6px 12px;
+}
+
+/* 列表头部 */
+.fs-list-header {
+    padding: 8px 15px;
+    background: #f5f7fa;
+    border-bottom: 1px solid #e5e5e5;
+    display: flex;
+    font-size: 12px;
+    font-weight: 600;
+    color: #666;
+}
+
+.fs-col-name {
+    flex: 1;
+    min-width: 0;
+}
+
+.fs-col-time {
+    width: 100px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.fs-col-perms {
+    width: 70px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+/* 文件列表 */
+.fs-file-list {
+    flex: 1;
+    overflow-y: auto;
+    background: #fff;
+    min-height: 280px;
+    max-height: 320px;
+}
+
+.fs-loading {
+    text-align: center;
+    padding: 30px;
+    color: #999;
+    font-size: 13px;
+}
+
+/* 列表项 */
+.fs-item {
+    padding: 8px 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border-bottom: 1px solid #f5f5f5;
+}
+
+.fs-item:hover {
+    background: #f0f9ff;
+}
+
+.fs-item.selected {
+    background: #e8f5e9;
+    border-left: 3px solid #20a53a;
+    padding-left: 12px;
+}
+
+.fs-item i {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.fs-item.fs-dir i {
+    color: #ffa500;
+}
+
+.fs-item.fs-file i {
+    color: #666;
+}
+
+.fs-name {
+    flex: 1;
+    font-size: 13px;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.fs-meta {
+    font-size: 11px;
+    color: #999;
+    flex-shrink: 0;
+    display: flex;
+    gap: 10px;
+}
+
+.fs-meta .fs-time {
+    width: 100px;
+    text-align: center;
+}
+
+.fs-meta .fs-perms {
+    width: 70px;
+    text-align: center;
+    font-family: Consolas, Monaco, monospace;
+    background: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+/* 空目录提示 */
+.fs-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #999;
+    font-size: 13px;
+}
+
+.fs-empty i {
+    font-size: 48px;
+    color: #ddd;
+    margin-bottom: 10px;
+    display: block;
+}
+
+/* 底部状态栏 */
+.fs-status-bar {
+    padding: 10px 15px;
+    background: #f8f9fa;
+    border-top: 1px solid #e5e5e5;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.fs-status-label {
+    color: #666;
+    flex-shrink: 0;
+}
+
+.fs-selected-path {
+    flex: 1;
+    padding: 6px 10px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 12px;
+    color: #20a53a;
+    font-family: Consolas, Monaco, monospace;
+    word-break: break-all;
+    min-height: 30px;
+    display: flex;
+    align-items: center;
+}
+
+/* 滚动条样式 */
+.fs-file-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.fs-file-list::-webkit-scrollbar-track {
+    background: #f5f5f5;
+}
+
+.fs-file-list::-webkit-scrollbar-thumb {
+    background: #d0d0d0;
+    border-radius: 3px;
+}
+
+.fs-file-list::-webkit-scrollbar-thumb:hover {
+    background: #b0b0b0;
+}
