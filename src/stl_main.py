@@ -4089,14 +4089,20 @@ class stl_main:
 
     def list_character_cards(self, args):
         """列出角色卡 PNG 文件"""
-        files = self._list_files_in_dir('characters', ['.png', '.webp', '.jpg', '.jpeg'])
+        files = self._list_files_in_dir('characters', ['.png'])
         return {'status': True, 'data': files}
 
     def delete_character_cards(self, args):
         """删除角色卡"""
         files = args.get('files', [])
+        
+        # 支持逗号分隔的字符串格式
         if isinstance(files, str):
-            files = [files]
+            files = [f.strip() for f in files.split(',') if f.strip()]
+        elif not isinstance(files, list):
+            files = []
+        
+        print(f'[DEBUG] delete_character_cards received files: {files}')  # 调试日志
         
         base_path = self._get_st_data_path()
         chars_dir = os.path.join(base_path, 'characters')
@@ -4135,8 +4141,8 @@ class stl_main:
         
         # 验证扩展名
         ext = os.path.splitext(safe_name)[1].lower()
-        if ext not in ['.png', '.webp', '.jpg', '.jpeg']:
-            return {'status': False, 'msg': '仅支持 PNG/WebP/JPG 格式'}
+        if ext not in ['.png']:
+            return {'status': False, 'msg': '仅支持 PNG 格式'}
         
         base_path = self._get_st_data_path()
         chars_dir = os.path.join(base_path, 'characters')
@@ -4177,10 +4183,8 @@ class stl_main:
             # 检测 MIME 类型
             if filename.endswith('.png'):
                 mime = 'image/png'
-            elif filename.endswith('.webp'):
-                mime = 'image/webp'
             else:
-                mime = 'image/jpeg'
+                return {'status': False, 'msg': '仅支持 PNG 格式'}
             
             b64 = base64.b64encode(data).decode('ascii')
             return {
@@ -4404,8 +4408,14 @@ class stl_main:
     def delete_world_infos(self, args):
         """删除世界书"""
         files = args.get('files', [])
+        
+        # 支持逗号分隔的字符串格式
         if isinstance(files, str):
-            files = [files]
+            files = [f.strip() for f in files.split(',') if f.strip()]
+        elif not isinstance(files, list):
+            files = []
+        
+        print(f'[DEBUG] delete_world_infos received files: {files}')  # 调试日志
         
         base_path = self._get_st_data_path()
         worlds_dir = os.path.join(base_path, 'worlds')
@@ -4675,8 +4685,19 @@ class stl_main:
     def delete_chats(self, args):
         """删除对话记录"""
         folders = args.get('folders', [])  # [{folder, file_name}]
+        
+        # 支持 JSON 字符串格式
         if isinstance(folders, str):
-            folders = [folders]
+            try:
+                import json
+                folders = json.loads(folders)
+            except:
+                folders = [folders]
+        
+        if not isinstance(folders, list):
+            folders = []
+        
+        print(f'[DEBUG] delete_chats received folders: {folders}')  # 调试日志
         
         base_path = self._get_st_data_path()
         chats_dir = os.path.join(base_path, 'chats')

@@ -733,7 +733,12 @@ var ResourcesPage = (function() {
             { title: '确认删除', btn: ['确定删除', '取消'], icon: 0, skin: 'stl-confirm-modal' },
             function(index) {
                 layer.close(index);
-                doDelete([filename]);
+                // 根据当前标签页调用不同的删除函数
+                if (state.activeTab === 'characters') {
+                    doDelete([filename]);
+                } else if (state.activeTab === 'worlds') {
+                    doDeleteWorlds([filename]);
+                }
             }
         );
     }
@@ -805,48 +810,69 @@ var ResourcesPage = (function() {
     }
     
     function doDelete(files) {
+        console.log('doDelete 调用, files:', files);
         var loading = layer.msg('正在删除...', { icon: 16, shade: 0.3, time: 0 });
         
-        request('delete_character_cards', function(res) {
+        // 将数组转为逗号分隔的字符串
+        request_plugin('delete_character_cards', { files: files.join(',') }, function(res) {
+            console.log('delete_character_cards 返回:', res);
             layer.close(loading);
             if (res.status) {
                 layer.msg(res.msg, { icon: 1 });
                 state.selected = {};
+                // 退出批量模式
+                if (state.batchMode) {
+                    toggleBatchMode(false);
+                }
                 refresh();
             } else {
                 layer.msg(res.msg || '删除失败', { icon: 2 });
             }
-        }, { files: files });
+        });
     }
     
     function doDeleteWorlds(files) {
+        console.log('doDeleteWorlds 调用, files:', files);
+        console.log('doDeleteWorlds 调用, files.join:', files.join(','));
         var loading = layer.msg('正在删除...', { icon: 16, shade: 0.3, time: 0 });
         
-        request('delete_world_infos', function(res) {
+        request_plugin('delete_world_infos', { files: files.join(',') }, function(res) {
+            console.log('delete_world_infos 返回:', res);
             layer.close(loading);
             if (res.status) {
                 layer.msg(res.msg, { icon: 1 });
                 state.selected = {};
+                // 退出批量模式
+                if (state.batchMode) {
+                    toggleBatchMode(false);
+                }
                 refresh();
             } else {
                 layer.msg(res.msg || '删除失败', { icon: 2 });
             }
-        }, { files: files });
+        });
     }
     
     function doDeleteChats(chats) {
+        console.log('doDeleteChats 调用, chats:', chats);
         var loading = layer.msg('正在删除...', { icon: 16, shade: 0.3, time: 0 });
         
-        request('delete_chats', function(res) {
+        // 将对象数组转为 JSON 字符串
+        request_plugin('delete_chats', { folders: JSON.stringify(chats) }, function(res) {
+            console.log('delete_chats 返回:', res);
             layer.close(loading);
             if (res.status) {
                 layer.msg(res.msg, { icon: 1 });
                 state.selected = {};
+                // 退出批量模式
+                if (state.batchMode) {
+                    toggleBatchMode(false);
+                }
                 refresh();
             } else {
                 layer.msg(res.msg || '删除失败', { icon: 2 });
             }
-        }, { folders: chats });
+        });
     }
     
     function doDeleteGroup(folder) {
@@ -862,15 +888,19 @@ var ResourcesPage = (function() {
             return { folder: folder, file_name: f.file_name };
         });
         
-        request('delete_chats', function(res) {
+        request_plugin('delete_chats', { folders: JSON.stringify(chats) }, function(res) {
             layer.close(loading);
             if (res.status) {
                 layer.msg(res.msg, { icon: 1 });
+                // 退出批量模式
+                if (state.batchMode) {
+                    toggleBatchMode(false);
+                }
                 refresh();
             } else {
                 layer.msg(res.msg || '删除失败', { icon: 2 });
             }
-        }, { folders: chats });
+        });
     }
     
     // ========== 导入功能 ==========

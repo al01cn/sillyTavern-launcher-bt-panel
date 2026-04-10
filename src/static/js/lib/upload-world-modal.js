@@ -7,7 +7,8 @@ var UploadWorldModal = (function() {
 
     var state = {
         selectedFiles: [],
-        isImporting: false
+        isImporting: false,
+        layerIndex: null
     };
 
     // 获取文件大小描述
@@ -109,7 +110,7 @@ var UploadWorldModal = (function() {
         state.selectedFiles = [];
         state.isImporting = false;
 
-        layer.open({
+        var layerIndex = layer.open({
             type: 1,
             title: '<i class="bi bi-book"></i> 导入世界书',
             area: ['550px', '420px'],
@@ -121,7 +122,8 @@ var UploadWorldModal = (function() {
                     doImport(index, onSuccess);
                 }
             },
-            success: function() {
+            success: function(layero, index) {
+                state.layerIndex = index;
                 bindEvents();
             }
         });
@@ -133,9 +135,15 @@ var UploadWorldModal = (function() {
         var $input = $('#stl-uwm-file-input');
 
         if ($dropzone.length && $input.length) {
+            // 先解绑旧事件，防止重复绑定
+            $dropzone.off('click');
+            $input.off('change');
+            $dropzone.off('dragover dragleave drop');
+
             $dropzone.on('click', function() {
                 if (!state.isImporting) {
-                    $input.click();
+                    // 使用原生 DOM API，避免 jQuery 的事件递归
+                    $input[0].click();
                 }
             });
 
@@ -160,11 +168,14 @@ var UploadWorldModal = (function() {
         }
 
         // 重新选择
-        $('#stl-uwm-reselect').on('click', function() {
+        $('#stl-uwm-reselect').off('click').on('click', function() {
             if (!state.isImporting) {
                 state.selectedFiles = [];
                 updateContent();
-                bindEvents();
+                // 不需要再次调用 bindEvents，因为 updateContent 会重新渲染 DOM
+                setTimeout(function() {
+                    bindEvents();
+                }, 0);
             }
         });
     }
@@ -205,6 +216,8 @@ var UploadWorldModal = (function() {
 
         if (pending.length === 0) return;
 
+        var completedCount = 0;
+        
         pending.forEach(function(fileData) {
             var file = fileData.file;
 
@@ -225,11 +238,17 @@ var UploadWorldModal = (function() {
                     fileData.worldName = data.name || fileData.name;
                     fileData.status = 'valid';
                 }
-                updateFileItem(fileData);
+                completedCount++;
+                if (completedCount === pending.length) {
+                    updateContent();
+                }
             }).catch(function(err) {
                 fileData.errorMsg = err.message || 'JSON 解析失败';
                 fileData.status = 'invalid';
-                updateFileItem(fileData);
+                completedCount++;
+                if (completedCount === pending.length) {
+                    updateContent();
+                }
             });
         });
     }
@@ -291,9 +310,20 @@ var UploadWorldModal = (function() {
 
     // 更新内容
     function updateContent() {
-        var $container = $('.layui-layer-content');
+        var $layero = state.layerIndex ? $('#layui-layer' + state.layerIndex) : null;
+        var $container = $layero ? $layero.find('.stl-upload-world-modal') : $('.stl-upload-world-modal');
+        
+        if ($container.length === 0) {
+            // 如果找不到容器，尝试查找 layui-layer-content
+            $container = $('.layui-layer-content');
+        }
+        
         if ($container.length) {
             $container.html(renderContent());
+            // 重新绑定事件
+            setTimeout(function() {
+                bindEvents();
+            }, 0);
         }
     }
 
@@ -346,7 +376,7 @@ var UploadWorldModal = (function() {
                 // 转换为 base64
                 var base64 = btoa(unescape(encodeURIComponent(content)));
 
-                request_plugin('import_world_info', function(res) {
+                request_plugin('import_world_info', { file_name: fileData.name, content: base64 }, function(res) {
                     completed++;
                     if (res.status) {
                         fileData.status = 'success';
@@ -357,7 +387,7 @@ var UploadWorldModal = (function() {
                     }
                     updateFileItem(fileData);
                     processNext(index + 1);
-                }, { file_name: fileData.name, content: base64 });
+                });
             }).catch(function(err) {
                 fileData.status = 'error';
                 fileData.errorMsg = '文件读取失败';

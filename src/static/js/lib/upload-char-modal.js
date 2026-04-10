@@ -7,7 +7,8 @@ var UploadCharModal = (function() {
 
     var state = {
         selectedFiles: [],
-        isImporting: false
+        isImporting: false,
+        layerIndex: null
     };
 
     // 获取文件大小描述
@@ -26,8 +27,8 @@ var UploadCharModal = (function() {
             html += '<div class="stl-ucm-dropzone" id="stl-ucm-dropzone">';
             html += '<div class="stl-ucm-dropzone-icon"><i class="bi bi-cloud-arrow-up"></i></div>';
             html += '<p class="stl-ucm-dropzone-text">点击选择文件或拖拽文件到此处</p>';
-            html += '<p class="stl-ucm-dropzone-hint">支持 PNG、WebP、JPG 格式</p>';
-            html += '<input type="file" id="stl-ucm-file-input" accept=".png,.webp,.jpg,.jpeg" multiple/>';
+            html += '<p class="stl-ucm-dropzone-hint">仅支持 PNG 格式</p>';
+            html += '<input type="file" id="stl-ucm-file-input" accept=".png" multiple/>';
             html += '</div>';
         } else {
             // 文件列表状态
@@ -108,8 +109,9 @@ var UploadCharModal = (function() {
     function open(onSuccess) {
         state.selectedFiles = [];
         state.isImporting = false;
+        onSuccessCallback = onSuccess;
 
-        layer.open({
+        var layerIndex = layer.open({
             type: 1,
             title: '<i class="bi bi-person-badge"></i> 导入角色卡',
             area: ['550px', '420px'],
@@ -121,7 +123,8 @@ var UploadCharModal = (function() {
                     doImport(index);
                 }
             },
-            success: function() {
+            success: function(layero, index) {
+                state.layerIndex = index;
                 bindEvents();
             }
         });
@@ -133,9 +136,15 @@ var UploadCharModal = (function() {
         var $input = $('#stl-ucm-file-input');
 
         if ($dropzone.length && $input.length) {
+            // 先解绑旧事件，防止重复绑定
+            $dropzone.off('click');
+            $input.off('change');
+            $dropzone.off('dragover dragleave drop');
+
             $dropzone.on('click', function() {
                 if (!state.isImporting) {
-                    $input.click();
+                    // 使用原生 DOM API，避免 jQuery 的事件递归
+                    $input[0].click();
                 }
             });
 
@@ -160,11 +169,14 @@ var UploadCharModal = (function() {
         }
 
         // 重新选择
-        $('#stl-ucm-reselect').on('click', function() {
+        $('#stl-ucm-reselect').off('click').on('click', function() {
             if (!state.isImporting) {
                 state.selectedFiles = [];
                 updateContent();
-                bindEvents();
+                // 不需要再次调用 bindEvents，因为 updateContent 会重新渲染 DOM
+                setTimeout(function() {
+                    bindEvents();
+                }, 0);
             }
         });
     }
@@ -196,6 +208,8 @@ var UploadCharModal = (function() {
 
         if (pending.length === 0) return;
 
+        var completedCount = 0;
+        
         pending.forEach(function(fileData) {
             var file = fileData.file;
 
@@ -207,11 +221,18 @@ var UploadCharModal = (function() {
                     fileData.errorMsg = '无效的角色卡数据';
                     fileData.status = 'invalid';
                 }
-                updateFileItem(fileData);
+                completedCount++;
+                if (completedCount === pending.length) {
+                    // 所有文件验证完成后，重新渲染
+                    updateContent();
+                }
             }).catch(function(err) {
                 fileData.errorMsg = err.message || '验证失败';
                 fileData.status = 'invalid';
-                updateFileItem(fileData);
+                completedCount++;
+                if (completedCount === pending.length) {
+                    updateContent();
+                }
             });
         });
     }
@@ -273,9 +294,20 @@ var UploadCharModal = (function() {
 
     // 更新内容
     function updateContent() {
-        var $container = $('.layui-layer-content');
+        var $layero = state.layerIndex ? $('#layui-layer' + state.layerIndex) : null;
+        var $container = $layero ? $layero.find('.stl-upload-char-modal') : $('.stl-upload-char-modal');
+        
+        if ($container.length === 0) {
+            // 如果找不到容器，尝试查找 layui-layer-content
+            $container = $('.layui-layer-content');
+        }
+        
         if ($container.length) {
             $container.html(renderContent());
+            // 重新绑定事件
+            setTimeout(function() {
+                bindEvents();
+            }, 0);
         }
     }
 
@@ -323,7 +355,7 @@ var UploadCharModal = (function() {
             reader.onload = function(e) {
                 var base64 = e.target.result.split(',')[1];
 
-                request_plugin('import_character_card', function(res) {
+                request_plugin('import_character_card', { file_name: fileData.name, content: base64 }, function(res) {
                     completed++;
                     if (res.status) {
                         fileData.status = 'success';
@@ -335,7 +367,7 @@ var UploadCharModal = (function() {
                     }
                     updateFileItem(fileData);
                     processNext(index + 1);
-                }, { file_name: fileData.name, content: base64 });
+                });
             };
 
             reader.onerror = function() {
