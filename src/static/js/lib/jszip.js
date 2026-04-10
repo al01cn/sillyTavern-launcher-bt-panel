@@ -1,4 +1,4 @@
-// JSZip 库内容...
+// JSZip 库内容... https://github.com/Stuk/jszip
 
 /**
  * SillyTavern 扩展包校验工具 (基于 JSZip)
