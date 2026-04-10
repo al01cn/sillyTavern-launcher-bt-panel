@@ -151,6 +151,33 @@ function switchMode(mode) {
     layer.msg('已切换至 ' + (mode === 'lan' ? '局域网' : '公网') + '模式', { icon: 1 });
 }
 
+/**
+ * 切换到在线安装版本（默认路径）
+ */
+function switchToOnlineVersion() {
+    layer.confirm('确定要切换到在线安装的默认版本吗？', {
+        icon: 3,
+        title: '确认切换'
+    }, function(index) {
+        layer.close(index);
+        var loadingIndex = layer.load(1, { shade: [0.3, '#000'] });
+        
+        // 将配置置空，后端会自动寻址到默认路径
+        request_plugin('set_tavern_path', { path: '' }, function(rdata) {
+            layer.close(loadingIndex);
+            if (rdata && rdata.status) {
+                layer.msg('已切换到在线版本', { icon: 1 });
+                // 如果当前在版本页，刷新列表
+                if (typeof loadLocalInstances === 'function') {
+                    loadLocalInstances();
+                }
+            } else {
+                layer.msg('切换失败', { icon: 2 });
+            }
+        });
+    });
+}
+
 // ======== 公开接口 ========
 
 return {
@@ -162,6 +189,7 @@ return {
     removeVersion: removeVersion,
     downloadVersion: downloadVersion,
     switchMode: switchMode,
+    switchToOnlineVersion: switchToOnlineVersion,
     
     // 版本管理（新版本）——运行时代理，避免 IIFE 执行时 window.* 尚未加载
     switchVersionTab: function() { return window.switchVersionTab && window.switchVersionTab.apply(this, arguments); },

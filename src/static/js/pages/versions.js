@@ -116,7 +116,7 @@ function renderLocalInstancesList(instances) {
                     '</div>' +
                 '</div>' +
                 '<div class="stl-version-actions">' +
-                    (isCurrent ? '' : '<button class="btn btn-bt-outline btn-bt-sm" onclick="BTPlugin.doSwitchInstance(\'' + inst.id + '\')">切换</button>') +
+                    (isCurrent ? '' : '<button class="btn btn-bt btn-bt-sm" onclick="BTPlugin.doSwitchInstance(\'' + inst.id + '\')">切换</button>') +
                     '<button class="btn btn-bt-danger btn-bt-sm" onclick="BTPlugin.doRemoveInstance(\'' + inst.id + '\')">删除</button>' +
                 '</div>' +
             '</div>';
@@ -236,6 +236,12 @@ function doSwitchInstance(instanceId) {
             layer.close(loadingIndex);
 
             if (rdata.status) {
+                // 同步更新 config.json 中的路径
+                var inst = (SillyTavern.instances || []).find(i => i.id === instanceId);
+                if (inst && inst.path) {
+                    request_plugin('set_tavern_path', { path: inst.path }, function() {});
+                }
+                
                 layer.msg('切换成功', { icon: 1 });
                 loadLocalInstances();
             } else {
@@ -332,7 +338,10 @@ function renderOnlineInstallCard(versionInfo) {
                 '</div>';
 
             actionButtons =
-                '<button class="btn btn-bt btn-bt-sm" onclick="BTPlugin.checkForUpdate(\'' + currentVersion + '\', \'' + onlineVersion + '\')">' +
+                '<button class="btn btn-bt btn-bt-sm" onclick="BTPlugin.switchToOnlineVersion()">' +
+                    '<i class="bi bi-arrow-right-circle"></i> 切换到在线版' +
+                '</button>' +
+                '<button class="btn btn-bt-outline btn-bt-sm" onclick="BTPlugin.checkForUpdate(\'' + currentVersion + '\', \'' + onlineVersion + '\')">' +
                     '<i class="bi bi-arrow-clockwise"></i> 检查更新' +
                 '</button>';
         } else {
@@ -363,6 +372,11 @@ function renderOnlineInstallCard(versionInfo) {
         $('#online-install-content').html(html);
     });
 }
+
+/**
+ * 切换到在线安装版本（默认路径）
+ * 逻辑已移至 main.js 中的 BTPlugin.switchToOnlineVersion
+ */
 
 /**
  * 检查更新
@@ -467,6 +481,10 @@ function installLatestVersion() {
                     isInstalling = false;
                     if (result.status) {
                         appendLog('[SUCCESS] ' + result.msg, 'success');
+                        
+                        // 在线安装成功，将配置置空以使用默认路径
+                        request_plugin('set_tavern_path', { path: '' }, function() {});
+                        
                         setTimeout(function() {
                             layer.close(logIndex);
                             layer.msg('安装成功！', { icon: 1 });

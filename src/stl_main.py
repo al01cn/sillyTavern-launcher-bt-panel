@@ -1252,8 +1252,11 @@ class stl_main:
             st_path
         }
         """
-        # 检查酒馆安装状态
-        tavern_check = self.is_st_installed({})
+        # 检查酒馆安装状态（使用自动寻址逻辑）
+        active_path = self.get_active_tavern_path()
+        tavern_check = {'installed': False, 'version': '', 'path': ''}
+        if active_path:
+            tavern_check = self.is_st_installed({'st_path': active_path})
         
         # 获取Node版本
         node_result = public.ExecShell('node -v')
@@ -1645,6 +1648,10 @@ class stl_main:
                 _write_line('========================================')
                 _write_line('[SUCCESS] SillyTavern 安装完成!')
                 _write_line('[INFO] 安装路径: ' + install_path)
+                
+                # 在线安装默认位置，将配置置空
+                if install_path == sillyTavern_path:
+                    self.__set_config('sillytavern_path', '')
                 _write_line('========================================')
 
             except Exception as e:
@@ -3554,3 +3561,479 @@ class stl_main:
                 'status': False,
                 'msg': '保存配置文件失败: ' + str(e)
             }
+
+    def get_active_tavern_path(self):
+        """获取当前激活的酒馆路径（优先读取配置，为空则回退默认）"""
+        custom_path = self.__get_config('sillytavern_path')
+        if custom_path and os.path.isdir(custom_path):
+            return custom_path
+        # 如果配置为空或目录不存在，返回默认在线安装路径
+        return sillyTavern_path if os.path.isdir(sillyTavern_path) else None
+
+    def set_tavern_path(self, args):
+        """设置酒馆路径（为空则代表使用默认在线安装位置）"""
+        path = args.get('path', '')
+        # 如果路径是默认路径，也存为空，方便逻辑判断
+        if path == sillyTavern_path:
+            path = ''
+        self.__set_config('sillytavern_path', path)
+        return {'status': True, 'msg': '设置成功'}
+
+    def get_installed_versions_info(self, args):
+        """获取已安装的 SillyTavern 版本信息"""
+        versions = []
+        # 1. 检查默认路径
+        if os.path.exists(sillyTavern_path) and os.path.isdir(sillyTavern_path):
+            version = self._get_st_version_from_path(sillyTavern_path)
+            versions.append({
+                'name': 'sillyTavern (Online)',
+                'path': sillyTavern_path,
+                'version': version
+            })
+        
+        # 2. 检查自定义路径（如果配置了且与默认不同）
+        custom_path = self.__get_config('sillytavern_path')
+        if custom_path and custom_path != sillyTavern_path and os.path.isdir(custom_path):
+            version = self._get_st_version_from_path(custom_path)
+            versions.append({
+                'name': os.path.basename(custom_path),
+                'path': custom_path,
+                'version': version
+            })
+            
+        return {'status': True, 'data': versions}
+
+    def _get_st_version_from_path(self, path):
+        """从指定路径获取 ST 版本号"""
+        pkg_file = os.path.join(path, 'package.json')
+        if os.path.isfile(pkg_file):
+            try:
+                content = public.ReadFile(pkg_file)
+                if content:
+                    import re
+                    match = re.search(r'"version"\s*:\s*"([^"]+)"', content)
+                    if match:
+                        return match.group(1)
+            except:
+                pass
+        return 'unknown'
+
+    def get_extensions_list(self, args):
+        """获取指定版本的扩展列表"""
+        version_path = args.get('version_path')
+        if not version_path or not os.path.isdir(version_path):
+            return {'status': False, 'msg': '无效的版本路径'}
+        
+        extensions = []
+        
+        # 1. 扫描用户扩展目录 (data/default-user/extensions)
+        # 注意：在插件版中，data位于酒馆根目录下或根据配置
+        data_dir = os.path.join(version_path, 'data')
+        if not os.path.exists(data_dir):
+            # 尝试在父级目录寻找 data (常见于某些安装方式)
+            parent_data = os.path.join(os.path.dirname(version_path), 'data')
+            if os.path.exists(parent_data):
+                data_dir = parent_data
+            else:
+                data_dir = None
+
+        if data_dir:
+            user_ext_dir = os.path.join(data_dir, 'default-user', 'extensions')
+            self._scan_extension_dir(user_ext_dir, 'user', False, extensions)
+            # 同时也扫描 third-party 子目录
+            self._scan_extension_dir(os.path.join(user_ext_dir, 'third-party'), 'user', False, extensions)
+
+        # 2. 扫描全局扩展目录 (public/scripts/extensions)
+        global_ext_dir = os.path.join(version_path, 'public', 'scripts', 'extensions')
+        if os.path.exists(global_ext_dir):
+            # 官方系统扩展（直接位于 extensions 下的非 third-party 文件夹）
+            self._scan_extension_dir(global_ext_dir, 'global', True, extensions)
+            # 全局第三方扩展（位于 extensions/third-party 下）
+            self._scan_extension_dir(os.path.join(global_ext_dir, 'third-party'), 'global', False, extensions)
+        
+        return {'status': True, 'data': extensions}
+
+    def _scan_extension_dir(self, dir_path, scope, force_system, extensions):
+        """扫描单个扩展目录"""
+        if not dir_path or not os.path.isdir(dir_path):
+            return
+        
+        for item in os.listdir(dir_path):
+            if item == 'third-party':
+                continue # third-party 单独处理
+                
+            item_path = os.path.join(dir_path, item)
+            if not os.path.isdir(item_path):
+                continue
+            
+            # 检查 manifest.json 或 manifest.json.disable
+            manifest_path = os.path.join(item_path, 'manifest.json')
+            disabled_manifest_path = os.path.join(item_path, 'manifest.json.disable')
+            
+            enabled = True
+            active_manifest_path = manifest_path
+            
+            if not os.path.exists(manifest_path):
+                if os.path.exists(disabled_manifest_path):
+                    active_manifest_path = disabled_manifest_path
+                    enabled = False
+                else:
+                    continue # 没有清单文件则跳过
+            
+            try:
+                content = public.ReadFile(active_manifest_path)
+                manifest = json.loads(content) if content else {}
+            except:
+                manifest = {}
+            
+            # 判定是否为系统扩展：
+            # 1. 如果是在官方目录下扫描且强制标记为系统 (force_system=True)
+            # 2. 或者根据 manifest 属性判断（非 auto_update 且无 Git 链接）
+            is_system = force_system or self._is_official_extension(manifest)
+            
+            extensions.append({
+                'id': item,
+                'dir_path': item_path,
+                'scope': scope, # user 或 global
+                'enabled': enabled,
+                'is_system': is_system,
+                'has_git': os.path.exists(os.path.join(item_path, '.git')),
+                'manifest': manifest
+            })
+
+    def _is_official_extension(self, manifest):
+        """判断是否为官方扩展"""
+        if manifest.get('auto_update') == True:
+            return False
+        home_page = manifest.get('homePage', '')
+        if home_page:
+            lower_hp = home_page.lower()
+            if any(x in lower_hp for x in ['github.com', 'gitee.com', 'gitlab.com']) or lower_hp.endswith('.git'):
+                return False
+        return True
+
+    def toggle_extension_enable(self, args):
+        """启用或禁用扩展"""
+        dir_path = args.get('dir_path')
+        enable = args.get('enable', True)
+        
+        if not dir_path or not os.path.exists(dir_path):
+            return {'status': False, 'msg': '扩展目录不存在'}
+        
+        parent_dir = os.path.dirname(dir_path)
+        base_name = os.path.basename(dir_path)
+        
+        if enable:
+            # 启用：移除 .disabled 后缀
+            if base_name.endswith('.disabled'):
+                new_name = base_name[:-9]
+                new_path = os.path.join(parent_dir, new_name)
+                os.rename(dir_path, new_path)
+        else:
+            # 禁用：添加 .disabled 后缀
+            if not base_name.endswith('.disabled'):
+                new_name = base_name + '.disabled'
+                new_path = os.path.join(parent_dir, new_name)
+                os.rename(dir_path, new_path)
+        
+        return {'status': True, 'msg': '操作成功'}
+
+    def delete_extension(self, args):
+        """删除扩展"""
+        dir_path = args.get('dir_path')
+        if not dir_path or not os.path.exists(dir_path):
+            return {'status': False, 'msg': '扩展目录不存在'}
+        
+        try:
+            import shutil
+            shutil.rmtree(dir_path)
+            return {'status': True, 'msg': '删除成功'}
+        except Exception as e:
+            return {'status': False, 'msg': '删除失败: ' + str(e)}
+
+    def toggle_extension_auto_update(self, args):
+        """切换扩展自动更新状态"""
+        dir_path = args.get('dir_path')
+        auto_update = args.get('auto_update', False)
+        
+        manifest_path = os.path.join(dir_path, 'manifest.json')
+        if not os.path.exists(manifest_path):
+            return {'status': False, 'msg': 'manifest.json 不存在'}
+        
+        try:
+            content = public.ReadFile(manifest_path)
+            manifest = json.loads(content) if content else {}
+            manifest['auto_update'] = auto_update
+            public.WriteFile(manifest_path, json.dumps(manifest, indent=4))
+            return {'status': True, 'msg': '设置成功'}
+        except Exception as e:
+            return {'status': False, 'msg': '设置失败: ' + str(e)}
+
+    def check_path_exists(self, args):
+        """检查指定路径是否存在"""
+        path = args.get('path')
+        return {'status': True, 'exists': os.path.exists(path) if path else False}
+
+    def upload_and_install_ext(self, args):
+        """处理前端上传的 ZIP 并触发安装（原生文件流处理）"""
+        import time
+        from flask import request
+        
+        # 获取上传的文件对象
+        if 'file' not in request.files:
+            return {'status': False, 'msg': '未接收到文件字段'}
+        
+        file_obj = request.files['file']
+        if file_obj.filename == '':
+            return {'status': False, 'msg': '未选择任何文件'}
+            
+        version_path = args.get('version_path')
+        scope = args.get('scope', 'global')
+        
+        try:
+            # 创建临时目录存放上传的 ZIP
+            temp_dir = os.path.join(version_path, 'logs', 'temp_uploads')
+            if not os.path.exists(temp_dir): os.makedirs(temp_dir)
+            
+            # 使用时间戳生成唯一文件名，防止冲突
+            temp_zip_path = os.path.join(temp_dir, 'upload_' + str(int(time.time() * 1000)) + '.zip')
+            
+            # 保存文件到服务器
+            file_obj.save(temp_zip_path)
+            
+            # 调用安装逻辑
+            return self.install_extension_zip({
+                'version_path': version_path,
+                'scope': scope,
+                'zip_path': temp_zip_path
+            })
+        except Exception as e:
+            return {'status': False, 'msg': '上传或安装失败: ' + str(e)}
+
+    def install_extension_zip(self, args):
+        """安装 ZIP 扩展包（接收已上传到服务器的文件路径）"""
+        import zipfile
+        version_path = args.get('version_path')
+        scope = args.get('scope', 'global')
+        zip_path = args.get('zip_path')
+        
+        if not zip_path or not os.path.exists(zip_path):
+            return {'status': False, 'msg': 'ZIP 文件不存在或路径无效'}
+
+        try:
+            # 确定安装目标目录
+            if scope == 'user':
+                target_dir = os.path.join(version_path, 'data', 'default-user', 'extensions', 'third-party')
+            else:
+                target_dir = os.path.join(version_path, 'public', 'scripts', 'extensions', 'third-party')
+            
+            if not os.path.exists(target_dir):
+                os.makedirs(target_dir)
+
+            # 读取 manifest 判断是否为官方扩展
+            is_official = False
+            with zipfile.ZipFile(zip_path, 'r') as z:
+                for name in z.namelist():
+                    if name.endswith('manifest.json'):
+                        try:
+                            m = json.loads(z.read(name))
+                            is_official = self._is_official_extension(m)
+                        except: pass
+                        break
+
+            # 如果是官方扩展，强制安装到全局根目录
+            if is_official:
+                target_dir = os.path.join(version_path, 'public', 'scripts', 'extensions')
+
+            # 解压
+            with zipfile.ZipFile(zip_path, 'r') as z:
+                # 1. 确定扩展名：直接使用 ZIP 文件名（去掉 .zip 后缀），避免中文名导致的识别问题
+                ext_name = os.path.splitext(os.path.basename(zip_path))[0]
+                
+                # 清理文件名中的非法字符，防止创建文件夹失败
+                import re
+                ext_name = re.sub(r'[\\/:*?"<>|]', '_', ext_name)
+                
+                # 2. 确定最终安装路径：目标目录 + 扩展名文件夹
+                final_install_dir = os.path.join(target_dir, ext_name)
+                if not os.path.exists(final_install_dir):
+                    os.makedirs(final_install_dir)
+
+                # 3. 检测 ZIP 内是否有公共根目录
+                first_part = z.namelist()[0].split('/')[0] if z.namelist() else ''
+                has_root = all(n.startswith(first_part + '/') for n in z.namelist())
+                
+                for name in z.namelist():
+                    if name.endswith('/'):
+                        continue
+                    
+                    # 计算相对路径：如果有根目录则去掉，否则保留原结构
+                    clean_name = name[len(first_part)+1:] if has_root else name
+                    target_path = os.path.join(final_install_dir, clean_name)
+                    
+                    if not os.path.exists(os.path.dirname(target_path)):
+                        os.makedirs(os.path.dirname(target_path))
+                    with open(target_path, 'wb') as f:
+                        f.write(z.read(name))
+
+            # 清理临时文件
+            try: os.remove(zip_path)
+            except: pass
+
+            return {'status': True, 'msg': '安装成功'}
+        except Exception as e:
+            return {'status': False, 'msg': '安装失败: ' + str(e)}
+
+    def install_extension_git(self, args):
+        """从 Git 仓库安装扩展"""
+        import subprocess, time
+        version_path = args.get('version_path')
+        scope = args.get('scope', 'global')
+        url = args.get('url')
+        branch = args.get('branch', '')
+        
+        # 创建临时日志文件
+        log_dir = os.path.join(version_path, 'logs')
+        if not os.path.exists(log_dir): os.makedirs(log_dir)
+        log_file = os.path.join(log_dir, 'ext_install_' + str(int(time.time())) + '.log')
+        
+        try:
+            # 确定安装父目录
+            if scope == 'user':
+                parent_dir = os.path.join(version_path, 'data', 'default-user', 'extensions', 'third-party')
+            else:
+                parent_dir = os.path.join(version_path, 'public', 'scripts', 'extensions', 'third-party')
+            
+            if not os.path.exists(parent_dir):
+                os.makedirs(parent_dir)
+
+            repo_name = url.rstrip('/').split('/')[-1].replace('.git', '')
+            target_dir = os.path.join(parent_dir, repo_name)
+            
+            if os.path.exists(target_dir):
+                return {'status': False, 'msg': '目录已存在，请先删除旧扩展'}
+
+            # 处理 GitHub 加速
+            config = self.__get_config()
+            final_url = url
+            if config.get('github_proxy', {}).get('enable') and 'github.com' in url:
+                proxy_url = config['github_proxy']['url'].rstrip('/')
+                final_url = f"{proxy_url}/{url.lstrip('/')}"
+                self._append_log(log_file, f"[{self._get_time()}] > 使用 GitHub 加速: {final_url}")
+            else:
+                self._append_log(log_file, f"[{self._get_time()}] > 原始地址: {url}")
+
+            cmd = ['git', 'clone', '--progress', '--depth', '1']
+            if branch:
+                cmd.extend(['-b', branch])
+            cmd.extend([final_url, target_dir])
+
+            env = os.environ.copy()
+            env['GIT_TERMINAL_PROMPT'] = '0'
+            
+            self._append_log(log_file, f"[{self._get_time()}] > 开始克隆仓库...")
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=120)
+            
+            # 将输出写入日志
+            if result.stdout: self._append_log(log_file, result.stdout)
+            if result.stderr: self._append_log(log_file, result.stderr)
+            
+            if result.returncode != 0:
+                self._append_log(log_file, f"[{self._get_time()}] ! 克隆失败，尝试离线保底修复...")
+                self._write_offline_git_skeleton(target_dir, url)
+                self._append_log(log_file, f"[{self._get_time()}] ~ 离线保底完成。")
+                return {'status': True, 'msg': '克隆失败但已写入保底 Git 结构', 'log_file': log_file}
+            
+            self._append_log(log_file, f"[{self._get_time()}] √ 克隆并安装成功！")
+            return {'status': True, 'msg': '安装成功', 'log_file': log_file}
+        except Exception as e:
+            self._append_log(log_file, f"[{self._get_time()}] ✗ 异常: {str(e)}")
+            return {'status': False, 'msg': 'Git 安装异常: ' + str(e), 'log_file': log_file}
+
+    def get_extension_install_log(self, args):
+        """获取安装日志内容"""
+        log_file = args.get('log_file')
+        if not log_file or not os.path.exists(log_file):
+            return {'status': True, 'content': ''}
+        try:
+            content = public.ReadFile(log_file)
+            return {'status': True, 'content': content}
+        except:
+            return {'status': True, 'content': ''}
+
+    def _append_log(self, log_file, msg):
+        """追加日志"""
+        try:
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(msg + '\n')
+        except: pass
+
+    def _get_time(self):
+        import datetime
+        return datetime.datetime.now().strftime('%H:%M:%S')
+
+    def _write_offline_git_skeleton(self, target_dir, remote_url):
+        """写入最小 .git 结构（离线保底）"""
+        git_dir = os.path.join(target_dir, '.git')
+        os.makedirs(os.path.join(git_dir, 'refs', 'heads'), exist_ok=True)
+        os.makedirs(os.path.join(git_dir, 'refs', 'remotes', 'origin'), exist_ok=True)
+        os.makedirs(os.path.join(git_dir, 'objects', 'info'), exist_ok=True)
+        os.makedirs(os.path.join(git_dir, 'objects', 'pack'), exist_ok=True)
+        
+        with open(os.path.join(git_dir, 'HEAD'), 'w') as f:
+            f.write('ref: refs/heads/main\n')
+        
+        config_content = (
+            f'[core]\n'
+            f'\trepositoryformatversion = 0\n'
+            f'\tfilemode = false\n'
+            f'\tbare = false\n'
+            f'\tlogallrefupdates = true\n'
+            f'[remote "origin"]\n'
+            f'\turl = {remote_url}\n'
+            f'\tfetch = +refs/heads/*:refs/remotes/origin/*\n'
+        )
+        with open(os.path.join(git_dir, 'config'), 'w') as f:
+            f.write(config_content)
+
+    def repair_extension_git(self, args):
+        """修复扩展的 Git 仓库"""
+        dir_path = args.get('dir_path')
+        if not dir_path or not os.path.exists(dir_path):
+            return {'status': False, 'msg': '扩展目录不存在'}
+        
+        git_dir = os.path.join(dir_path, '.git')
+        if os.path.exists(git_dir):
+            # 尝试 fetch 和 reset
+            public.ExecShell(f'cd "{dir_path}" && git fetch origin && git reset --hard origin/main')
+            return {'status': True, 'msg': 'Git 修复成功'}
+        else:
+            # 重新初始化 git (如果知道远程地址，可以尝试 clone，这里简单处理为提示)
+            return {'status': False, 'msg': '未检测到 Git 仓库，无法自动修复'}
+
+    def open_extension_folder(self, args):
+        """打开扩展文件夹"""
+        version_path = args.get('version_path')
+        scope = args.get('scope', 'user')
+        
+        if not version_path:
+            return {'status': False, 'msg': '未指定版本路径'}
+        
+        target_dir = os.path.join(version_path, 'extensions')
+        if scope == 'global':
+            target_dir = os.path.join(target_dir, 'global')
+        
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir)
+        
+        public.ExecShell(f'xdg-open "{target_dir}"')
+        return {'status': True, 'msg': '已打开目录'}
+
+    def open_specific_extension_folder(self, args):
+        """打开特定扩展文件夹"""
+        dir_path = args.get('dirPath')
+        if not dir_path or not os.path.exists(dir_path):
+            return {'status': False, 'msg': '目录不存在'}
+        
+        public.ExecShell(f'xdg-open "{dir_path}"')
+        return {'status': True, 'msg': '已打开目录'}
