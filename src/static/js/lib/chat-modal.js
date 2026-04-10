@@ -108,13 +108,15 @@ var ChatModal = (function() {
         state.charName = charName || '';
         state.fileName = fileName;
 
-        layer.open({
+        var layerIndex = layer.open({
             type: 1,
             title: '<i class="bi bi-chat-dots"></i> 对话详情',
             area: ['650px', '550px'],
             maxHeight: 600,
-            content: '<div class="stl-chat-modal-loading"><div class="spinner"></div><p>加载中...</p></div>',
-            success: function() {
+            content: '<div class="stl-chat-modal"><div class="stl-chat-modal-loading"><div class="spinner"></div><p>加载中...</p></div></div>',
+            success: function(layero, index) {
+                // 保存 layer index
+                state.layerIndex = index;
                 loadData(charFolder, fileName);
             }
         });
@@ -122,38 +124,54 @@ var ChatModal = (function() {
 
     // 加载数据
     function loadData(charFolder, fileName) {
-        request_plugin('read_chat', function(res) {
+        request_plugin('read_chat', { char_folder: charFolder, file_name: fileName }, function(res) {
+            console.log('read_chat 返回:', res);
             if (res.status && res.data) {
                 state.messages = res.data;
+                console.log('对话消息加载成功，共', state.messages.length, '条');
             } else {
-                state.errorMsg = res.msg || '读取失败';
+                state.errorMsg = res ? (res.msg || '读取失败') : '读取失败';
+                console.error('对话消息加载失败:', state.errorMsg);
             }
             state.loading = false;
             updateContent();
-        }, { char_folder: charFolder, file_name: fileName });
+        });
     }
 
     // 更新内容
     function updateContent() {
-        var $container = $('.layui-layer-content');
-        if ($container.length === 0) return;
-
+        console.log('updateContent 被调用, loading:', state.loading, 'errorMsg:', state.errorMsg);
+        
+        var html;
         if (state.loading) {
-            $container.html('<div class="stl-chat-modal-loading"><div class="spinner"></div><p>加载中...</p></div>');
-            return;
+            html = '<div class="stl-chat-modal-loading"><div class="spinner"></div><p>加载中...</p></div>';
+        } else if (state.errorMsg) {
+            html = '<div class="stl-chat-modal-error"><i class="bi bi-exclamation-triangle"></i><p>' + state.errorMsg + '</p></div>';
+        } else {
+            html = renderContent();
         }
-
-        if (state.errorMsg) {
-            $container.html('<div class="stl-chat-modal-error"><i class="bi bi-exclamation-triangle"></i><p>' + state.errorMsg + '</p></div>');
-            return;
-        }
-
-        $container.html(renderContent());
-
-        // 滚动到底部
-        var $messages = $container.find('.stl-cm-messages');
-        if ($messages.length) {
-            $messages.scrollTop($messages[0].scrollHeight);
+        
+        // 使用 Layer API 更新内容
+        if (state.layerIndex) {
+            console.log('使用 layer.style 更新内容');
+            var $layero = $('#layui-layer' + state.layerIndex);
+            var $content = $layero.find('.stl-chat-modal');
+            if ($content.length > 0) {
+                console.log('找到 .stl-chat-modal 元素，更新 HTML');
+                $content.html(html);
+                
+                // 滚动到底部
+                var $messages = $content.find('.stl-cm-messages');
+                if ($messages.length) {
+                    setTimeout(function() {
+                        $messages.scrollTop($messages[0].scrollHeight);
+                    }, 100);
+                }
+            } else {
+                console.error('未找到 .stl-chat-modal 元素');
+            }
+        } else {
+            console.error('state.layerIndex 未设置');
         }
     }
 
