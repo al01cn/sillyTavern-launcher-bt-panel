@@ -82,27 +82,24 @@ var ResourcesPage = (function() {
                     // 工具栏
                     '<div class="stl-resource-toolbar">' +
                         '<div class="toolbar-left">' +
-                            // Tab 切换
-                            '<div class="stl-resource-tabs">' +
-                                '<button class="stl-resource-tab active" data-tab="characters" onclick="ResourcesPage.switchTab(\'characters\')">' +
-                                    '<i class="bi bi-person-badge tab-icon"></i> 角色卡' +
-                                    '<span class="tab-count" id="tab-count-chars">0</span>' +
-                                '</button>' +
-                                '<button class="stl-resource-tab" data-tab="worlds" onclick="ResourcesPage.switchTab(\'worlds\')">' +
-                                    '<i class="bi bi-book tab-icon"></i> 世界书' +
-                                    '<span class="tab-count" id="tab-count-worlds">0</span>' +
-                                '</button>' +
-                                '<button class="stl-resource-tab" data-tab="chats" onclick="ResourcesPage.switchTab(\'chats\')">' +
-                                    '<i class="bi bi-chat-dots tab-icon"></i> 对话历史' +
-                                    '<span class="tab-count" id="tab-count-chats">0</span>' +
-                                '</button>' +
+                            // Tab 切换（使用版本页面的样式）
+                            '<div class="stl-tabs">' +
+                                '<div class="stl-tab active" id="tab-chars" onclick="ResourcesPage.switchTab(\'characters\')">' +
+                                    '角色卡 <span class="tab-count" id="tab-count-chars">0</span>' +
+                                '</div>' +
+                                '<div class="stl-tab" id="tab-worlds" onclick="ResourcesPage.switchTab(\'worlds\')">' +
+                                    '世界书 <span class="tab-count" id="tab-count-worlds">0</span>' +
+                                '</div>' +
+                                '<div class="stl-tab" id="tab-chats" onclick="ResourcesPage.switchTab(\'chats\')">' +
+                                    '对话历史 <span class="tab-count" id="tab-count-chats">0</span>' +
+                                '</div>' +
                             '</div>' +
                         '</div>' +
                         '<div class="toolbar-right">' +
                             '<button class="stl-btn stl-btn-default" id="btn-batch-mode" onclick="ResourcesPage.toggleBatchMode()">' +
                                 '<i class="bi bi-check-square"></i> 批量操作' +
                             '</button>' +
-                            '<button class="stl-btn stl-btn-default" onclick="ResourcesPage.showImportModal()">' +
+                            '<button class="stl-btn stl-btn-default" id="btn-import" onclick="ResourcesPage.showImportModal()">' +
                                 '<i class="bi bi-upload"></i> 导入' +
                             '</button>' +
                             '<button class="stl-btn stl-btn-danger" id="btn-delete-selected" onclick="ResourcesPage.deleteSelected()" disabled>' +
@@ -357,9 +354,22 @@ var ResourcesPage = (function() {
         state.selected = {};
         state.batchMode = false;  // 切换 Tab 时退出批量模式
         
-        // 更新 Tab 样式
-        $('.stl-resource-tab').removeClass('active');
-        $('.stl-resource-tab[data-tab="' + tab + '"]').addClass('active');
+        // 更新 Tab 样式（使用版本页面的样式）
+        $('.stl-tab').removeClass('active');
+        if (tab === 'characters') {
+            $('#tab-chars').addClass('active');
+        } else if (tab === 'worlds') {
+            $('#tab-worlds').addClass('active');
+        } else if (tab === 'chats') {
+            $('#tab-chats').addClass('active');
+        }
+        
+        // 对话历史 Tab 隐藏导入按钮
+        if (tab === 'chats') {
+            $('#btn-import').hide();
+        } else {
+            $('#btn-import').show();
+        }
         
         // 更新按钮状态
         updateBatchModeButton();
@@ -730,15 +740,28 @@ var ResourcesPage = (function() {
                 '<p style="font-size:14px;">确定要删除 <strong>' + filename + '</strong> 吗？</p>' +
                 '<p style="font-size:12px;color:#999;">此操作不可恢复</p>' +
             '</div>',
-            { title: '确认删除', btn: ['确定删除', '取消'], icon: 0, skin: 'stl-confirm-modal' },
+            { title: '确认删除', btn: ['下一步', '取消'], icon: 0, skin: 'stl-confirm-modal' },
             function(index) {
+                // 第一次确认，显示二次确认
                 layer.close(index);
-                // 根据当前标签页调用不同的删除函数
-                if (state.activeTab === 'characters') {
-                    doDelete([filename]);
-                } else if (state.activeTab === 'worlds') {
-                    doDeleteWorlds([filename]);
-                }
+                layer.confirm(
+                    '<div style="text-align:center;padding:15px 0;">' +
+                        '<i class="bi bi-exclamation-circle" style="font-size:48px;color:#dc3545;margin-bottom:15px;"></i>' +
+                        '<p style="font-size:14px;font-weight:bold;">再次确认</p>' +
+                        '<p style="font-size:13px;">真的要删除 <strong>' + filename + '</strong> 吗？</p>' +
+                        '<p style="font-size:12px;color:#999;">此操作无法撤销！</p>' +
+                    '</div>',
+                    { title: '最终确认', btn: ['确定删除', '再想想'], icon: 0, skin: 'stl-confirm-modal' },
+                    function(index2) {
+                        layer.close(index2);
+                        // 根据当前标签页调用不同的删除函数
+                        if (state.activeTab === 'characters') {
+                            doDelete([filename]);
+                        } else if (state.activeTab === 'worlds') {
+                            doDeleteWorlds([filename]);
+                        }
+                    }
+                );
             }
         );
     }
@@ -753,10 +776,22 @@ var ResourcesPage = (function() {
                 '<p style="font-size:14px;">确定要删除角色 <strong>' + group.char_name + '</strong> 的全部对话记录吗？</p>' +
                 '<p style="font-size:12px;color:#999;">共 ' + group.files.length + ' 条记录，此操作不可恢复</p>' +
             '</div>',
-            { title: '确认删除', btn: ['确定删除', '取消'], icon: 0, skin: 'stl-confirm-modal' },
+            { title: '确认删除', btn: ['下一步', '取消'], icon: 0, skin: 'stl-confirm-modal' },
             function(index) {
                 layer.close(index);
-                doDeleteGroup(folder);
+                layer.confirm(
+                    '<div style="text-align:center;padding:15px 0;">' +
+                        '<i class="bi bi-exclamation-circle" style="font-size:48px;color:#dc3545;margin-bottom:15px;"></i>' +
+                        '<p style="font-size:14px;font-weight:bold;">再次确认</p>' +
+                        '<p style="font-size:13px;">真的要删除 <strong>' + group.char_name + '</strong> 的全部 ' + group.files.length + ' 条对话记录吗？</p>' +
+                        '<p style="font-size:12px;color:#999;">此操作无法撤销！</p>' +
+                    '</div>',
+                    { title: '最终确认', btn: ['确定删除', '再想想'], icon: 0, skin: 'stl-confirm-modal' },
+                    function(index2) {
+                        layer.close(index2);
+                        doDeleteGroup(folder);
+                    }
+                );
             }
         );
     }
@@ -768,10 +803,22 @@ var ResourcesPage = (function() {
                 '<p style="font-size:14px;">确定要删除对话记录 <strong>' + filename + '</strong> 吗？</p>' +
                 '<p style="font-size:12px;color:#999;">此操作不可恢复</p>' +
             '</div>',
-            { title: '确认删除', btn: ['确定删除', '取消'], icon: 0, skin: 'stl-confirm-modal' },
+            { title: '确认删除', btn: ['下一步', '取消'], icon: 0, skin: 'stl-confirm-modal' },
             function(index) {
                 layer.close(index);
-                doDeleteChats([{ folder: folder, file_name: filename }]);
+                layer.confirm(
+                    '<div style="text-align:center;padding:15px 0;">' +
+                        '<i class="bi bi-exclamation-circle" style="font-size:48px;color:#dc3545;margin-bottom:15px;"></i>' +
+                        '<p style="font-size:14px;font-weight:bold;">再次确认</p>' +
+                        '<p style="font-size:13px;">真的要删除对话记录 <strong>' + filename + '</strong> 吗？</p>' +
+                        '<p style="font-size:12px;color:#999;">此操作无法撤销！</p>' +
+                    '</div>',
+                    { title: '最终确认', btn: ['确定删除', '再想想'], icon: 0, skin: 'stl-confirm-modal' },
+                    function(index2) {
+                        layer.close(index2);
+                        doDeleteChats([{ folder: folder, file_name: filename }]);
+                    }
+                );
             }
         );
     }
@@ -786,25 +833,38 @@ var ResourcesPage = (function() {
                 '<p style="font-size:14px;">确定要删除选中的 <strong>' + count + '</strong> 项资源吗？</p>' +
                 '<p style="font-size:12px;color:#999;">此操作不可恢复</p>' +
             '</div>',
-            { title: '确认删除', btn: ['确定删除', '取消'], icon: 0, skin: 'stl-confirm-modal' },
+            { title: '确认删除', btn: ['下一步', '取消'], icon: 0, skin: 'stl-confirm-modal' },
             function(index) {
+                // 第一次确认，显示二次确认
                 layer.close(index);
-                
-                if (state.activeTab === 'chats') {
-                    var items = Object.keys(state.selected).filter(function(k) { return state.selected[k]; });
-                    var chats = items.map(function(k) {
-                        var parts = k.split('|');
-                        return { folder: parts[0].replace('group_', ''), file_name: parts[1] };
-                    });
-                    doDeleteChats(chats);
-                } else {
-                    var files = Object.keys(state.selected).filter(function(k) { return state.selected[k]; });
-                    if (state.activeTab === 'characters') {
-                        doDelete(files);
-                    } else {
-                        doDeleteWorlds(files);
+                layer.confirm(
+                    '<div style="text-align:center;padding:15px 0;">' +
+                        '<i class="bi bi-exclamation-circle" style="font-size:48px;color:#dc3545;margin-bottom:15px;"></i>' +
+                        '<p style="font-size:14px;font-weight:bold;">再次确认</p>' +
+                        '<p style="font-size:13px;">真的要删除选中的 <strong>' + count + '</strong> 项资源吗？</p>' +
+                        '<p style="font-size:12px;color:#999;">此操作无法撤销！</p>' +
+                    '</div>',
+                    { title: '最终确认', btn: ['确定删除', '再想想'], icon: 0, skin: 'stl-confirm-modal' },
+                    function(index2) {
+                        layer.close(index2);
+                        
+                        if (state.activeTab === 'chats') {
+                            var items = Object.keys(state.selected).filter(function(k) { return state.selected[k]; });
+                            var chats = items.map(function(k) {
+                                var parts = k.split('|');
+                                return { folder: parts[0].replace('group_', ''), file_name: parts[1] };
+                            });
+                            doDeleteChats(chats);
+                        } else {
+                            var files = Object.keys(state.selected).filter(function(k) { return state.selected[k]; });
+                            if (state.activeTab === 'characters') {
+                                doDelete(files);
+                            } else {
+                                doDeleteWorlds(files);
+                            }
+                        }
                     }
-                }
+                );
             }
         );
     }
