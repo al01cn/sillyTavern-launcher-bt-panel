@@ -32,7 +32,15 @@ function renderHomePage() {
                         '</div>' +
                         '<div class="stl-info-item">' +
                             '<span class="stl-info-label"><i class="bi bi-play-circle"></i> 服务状态</span>' +
-                            '<span class="stl-info-value"><span class="stl-status stl-status-stopped" id="service-status">未启动</span></span>' +
+                            '<span class="stl-info-value">' +
+                                '<span class="stl-status stl-status-stopped" id="service-status">未启动</span>' +
+                                '<button class="stl-proxy-btn" id="btn-proxy-manage" onclick="ProxyModal.open()" style="margin-left:8px;" title="管理反向代理">' +
+                                    '<i class="bi bi-shield-lock"></i> 反向代理' +
+                                '</button>' +
+                                '<button class="btn btn-bt btn-bt-sm" id="btn-visit-home" onclick="NetworkModal.open()" style="margin-left:8px;display:none;">' +
+                                    '<i class="bi bi-box-arrow-up-right"></i> 访问酒馆' +
+                                '</button>' +
+                            '</span>' +
                         '</div>' +
                     '</div>' +
                 '</div>' +
@@ -70,11 +78,6 @@ function renderHomePage() {
                                 '<i class="bi bi-stop-fill"></i>' +
                                 '<span>停止服务</span>' +
                             '</button>' +
-                            // 访问链接
-                            '<div class="stl-flex stl-flex-between">' +
-                                '<span class="text-muted" id="server-url" style="font-size:12px;"></span>' +
-                                '<a href="javascript:void(0)" onclick="BTPlugin.openServer()" id="btn-visit" style="display:none;font-size:12px;">访问酒馆 <i class="bi bi-box-arrow-up-right"></i></a>' +
-                            '</div>' +
                         '</div>' +
                     '</div>' +
                 '</div>' +
@@ -181,31 +184,13 @@ function checkServiceStatus() {
                 $('#btn-start').hide();
                 $('#btn-stop').show().prop('disabled', false).removeClass('btn-disabled');
                 $('#service-status').text('运行中').removeClass('stl-status-stopped').addClass('stl-status-started');
-                
-                // 从后端获取正确的访问URL（含局域网/公网IP）
-                var mode = localStorage.getItem('stl_access_mode') || 'wan';
-                request_plugin('get_access_url', { mode: mode }, function(urlData) {
-                    var url = (urlData.status && urlData.url) ? urlData.url : '';
-                    if (!url) {
-                        // 降级：直接用端口拼 localhost
-                        request_plugin('get_config', { key: 'tavern_port' }, function(configData) {
-                            var port = (configData.status && configData.value) ? configData.value : '8000';
-                            url = 'http://localhost:' + port;
-                            $('#server-url').text(url);
-                            $('#btn-visit').show();
-                        });
-                    } else {
-                        $('#server-url').text(url);
-                        $('#btn-visit').show();
-                    }
-                });
+                $('#btn-visit-home').show();
             } else if (rdata && rdata.status) {
                 // pm2_status 成功返回，但进程不在运行
                 $('#btn-start').show();
                 $('#btn-stop').hide();
                 $('#service-status').text('已停止').removeClass('stl-status-started').addClass('stl-status-stopped');
-                $('#server-url').text('');
-                $('#btn-visit').hide();
+                $('#btn-visit-home').hide();
                 
                 // 启用/禁用启动按钮：酒馆已安装才启用
                 if (tavernInstalled) {
@@ -299,11 +284,7 @@ function startService() {
                 $('#btn-start').hide();
                 $('#btn-stop').show();
                 $('#service-status').text('运行中').removeClass('stl-status-stopped').addClass('stl-status-started');
-                
-                if (rdata.url) {
-                    $('#server-url').text(rdata.url);
-                    $('#btn-visit').show();
-                }
+                $('#btn-visit-home').show();
                 
                 // 先通知控制台页面（在跳转之前）
                 if (window.ConsolePage && typeof window.ConsolePage.onServiceStart === 'function') {
@@ -338,8 +319,7 @@ function stopService() {
             $('#btn-stop').hide();
             $('#btn-start').show();
             $('#service-status').text('已停止').removeClass('stl-status-started').addClass('stl-status-stopped');
-            $('#server-url').text('');
-            $('#btn-visit').hide();
+            $('#btn-visit-home').hide();
             layer.msg('服务已停止', { icon: 1 });
         } else {
             $('#btn-stop').html('<i class="bi bi-stop-fill"></i><span>停止服务</span>').prop('disabled', false);
@@ -352,12 +332,3 @@ function stopService() {
     });
 }
 
-/**
- * 打开酒馆页面
- */
-function openServer() {
-    var url = $('#server-url').text();
-    if (url) {
-        window.open(url, '_blank');
-    }
-}

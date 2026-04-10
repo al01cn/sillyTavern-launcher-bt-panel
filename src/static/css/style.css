@@ -1708,3 +1708,934 @@ button.stl-mode-btn.active i {
 .stl-log-path-hint a:hover {
     color: var(--bt-primary-dark);
 }
+
+/* ═══════════════════════════════════════════════════════
+   反向代理管理弹窗样式
+   ═══════════════════════════════════════════════════════ */
+
+/* 服务状态行的小按钮 */
+button.stl-proxy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+    border: 1px solid #20a53a;
+    background: transparent;
+    color: #20a53a;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    vertical-align: middle;
+}
+
+button.stl-proxy-btn:hover {
+    background: #20a53a;
+    color: #fff;
+}
+
+button.stl-proxy-btn i {
+    font-size: 13px;
+}
+
+/* 弹窗容器 */
+.stl-proxy-modal {
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 13px;
+    color: #3c3c3c;
+}
+
+/* 弹窗头部 */
+.stl-pm-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #20a53a 0%, #1a8c31 100%);
+    color: #fff;
+}
+
+.stl-pm-drag-handle {
+    cursor: move; /* 只有标题区域可拖动 */
+    user-select: none; /* 防止拖动时选中文本 */
+}
+
+.stl-pm-title {
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stl-pm-title i {
+    font-size: 18px;
+}
+
+.stl-pm-close {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #fff;
+    font-size: 16px;
+    transition: background 0.2s;
+    padding: 0;
+    line-height: 1;
+}
+
+.stl-pm-close:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+/* 警告提示 */
+.stl-pm-alert {
+    margin: 12px 20px 0;
+    padding: 10px 14px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.stl-pm-alert-warning {
+    background: #fffbe6;
+    border: 1px solid #ffe58f;
+    color: #d48806;
+}
+
+.stl-pm-alert-info {
+    background: #f0f5ff;
+    border: 1px solid #adc6ff;
+    color: #2f54eb;
+}
+
+.stl-pm-alert i {
+    font-size: 15px;
+    flex-shrink: 0;
+}
+
+/* Tab 切换 */
+.stl-pm-tabs {
+    display: flex;
+    border-bottom: 2px solid #f0f0f0;
+    margin: 14px 20px 0;
+}
+
+.stl-pm-tab {
+    padding: 8px 20px;
+    font-size: 13px;
+    border: none;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+    font-family: inherit;
+    border-radius: 4px 4px 0 0;
+}
+
+.stl-pm-tab:hover {
+    color: #333;
+}
+
+.stl-pm-tab.active {
+    color: #20a53a;
+    border-bottom-color: #20a53a;
+    font-weight: 600;
+}
+
+/* 面板 */
+.stl-pm-panel {
+    display: none;
+    padding: 16px 20px 20px;
+}
+
+.stl-pm-panel.active {
+    display: block;
+}
+
+/* 分组区块 */
+.stl-pm-section {
+    margin-bottom: 16px;
+    padding: 14px;
+    background: #fafafa;
+    border-radius: 6px;
+    border: 1px solid #f0f0f0;
+}
+
+.stl-pm-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stl-pm-section-title i {
+    color: #20a53a;
+}
+
+/* 行（标签 + 内容） */
+.stl-pm-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+/* 标签 */
+.stl-pm-label {
+    font-size: 13px;
+    color: #555;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+/* 表单字段 */
+.stl-pm-field {
+    margin-bottom: 12px;
+}
+
+.stl-pm-field:last-child {
+    margin-bottom: 0;
+}
+
+.stl-pm-field-label {
+    display: block;
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+/* 输入框 */
+.stl-pm-input {
+    width: 100%;
+    padding: 7px 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 13px;
+    color: #333;
+    background: #fff;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.stl-pm-input:focus {
+    outline: none;
+    border-color: #20a53a;
+    box-shadow: 0 0 0 2px rgba(32, 165, 58, 0.12);
+}
+
+.stl-pm-input-readonly {
+    background: #f5f5f5;
+    color: #666;
+    cursor: default;
+}
+
+.stl-pm-input-group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.stl-pm-input-group .stl-pm-input {
+    flex: 1;
+}
+
+/* textarea */
+.stl-pm-textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 12px;
+    color: #333;
+    background: #fff;
+    resize: vertical;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+    line-height: 1.5;
+}
+
+.stl-pm-textarea:focus {
+    outline: none;
+    border-color: #20a53a;
+    box-shadow: 0 0 0 2px rgba(32, 165, 58, 0.12);
+}
+
+.stl-pm-textarea-readonly {
+    background: #f8f8f8;
+    color: #555;
+    cursor: default;
+    min-height: 60px;
+}
+
+/* 帮助文字 */
+.stl-pm-help {
+    font-size: 11px;
+    color: #999;
+    margin-top: 4px;
+}
+
+/* 开关 */
+.stl-pm-toggle-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stl-pm-toggle-text {
+    font-size: 13px;
+    color: #888;
+    min-width: 28px;
+}
+
+.stl-pm-toggle {
+    position: relative;
+    display: inline-block;
+    width: 42px;
+    height: 24px;
+}
+
+.stl-pm-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.stl-pm-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #ccc;
+    border-radius: 24px;
+    transition: background 0.3s;
+}
+
+.stl-pm-toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.3s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.stl-pm-toggle input:checked + .stl-pm-toggle-slider {
+    background: #20a53a;
+}
+
+.stl-pm-toggle input:checked + .stl-pm-toggle-slider::before {
+    transform: translateX(18px);
+}
+
+.stl-pm-toggle input:disabled + .stl-pm-toggle-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* 弹窗底部 */
+.stl-pm-footer {
+    padding: 14px 20px;
+    border-top: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* 按钮 */
+.stl-pm-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 16px;
+    border-radius: 5px;
+    font-size: 13px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.stl-pm-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.stl-pm-btn i {
+    font-size: 14px;
+}
+
+/* SSL 状态 */
+.stl-pm-ssl-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 13px;
+}
+
+.stl-pm-ssl-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.stl-pm-ssl-badge-ok {
+    background: #e8f5e9;
+    color: #388e3c;
+    border: 1px solid #a5d6a7;
+}
+
+.stl-pm-ssl-badge-none {
+    background: #f5f5f5;
+    color: #888;
+    border: 1px solid #e0e0e0;
+}
+
+.stl-pm-ssl-badge-unknown {
+    background: #fff3e0;
+    color: #e65100;
+    border: 1px solid #ffcc80;
+}
+
+.stl-pm-ssl-detail {
+    font-size: 12px;
+    color: #888;
+}
+
+.stl-pm-ssl-detail b {
+    color: #555;
+}
+
+/* SSL 类型选择按钮 */
+.stl-pm-ssl-type-btns {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.stl-pm-ssl-type-btn {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 14px;
+    border-radius: 6px;
+    border: 1.5px solid #ddd;
+    background: #fff;
+    color: #666;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.stl-pm-ssl-type-btn:hover {
+    border-color: #20a53a;
+    color: #20a53a;
+    background: #f0fff4;
+}
+
+.stl-pm-ssl-type-btn.active {
+    border-color: #20a53a;
+    background: #e8f5e9;
+    color: #20a53a;
+    font-weight: 600;
+}
+
+.stl-pm-ssl-type-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.stl-pm-ssl-type-btn i {
+    font-size: 16px;
+}
+
+/* 文件上传行 */
+.stl-pm-upload-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.stl-pm-upload-row .stl-pm-input {
+    flex: 1;
+}
+
+/* 上传操作区 */
+.stl-pm-upload-actions {
+    margin-top: 14px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* SSL 证书/密钥左右对称布局 */
+.stl-pm-ssl-cols {
+    display: flex;
+    gap: 14px;
+}
+
+.stl-pm-ssl-col {
+    flex: 1;
+    min-width: 0;
+}
+
+/* 拖拽上传区域 */
+.stl-pm-drop-zone {
+    border: 2px dashed #d0d0d0;
+    border-radius: 8px;
+    padding: 18px 10px 14px;
+    text-align: center;
+    color: #999;
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    line-height: 1.6;
+    user-select: none;
+}
+
+.stl-pm-drop-zone:hover {
+    border-color: #20a53a;
+    background: rgba(32, 165, 58, 0.04);
+    color: #20a53a;
+}
+
+.stl-pm-drop-zone.stl-pm-drop-active {
+    border-color: #20a53a;
+    background: rgba(32, 165, 58, 0.08);
+    color: #20a53a;
+}
+
+/* 加载动画 */
+.stl-pm-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: #888;
+    font-size: 12px;
+}
+
+.stl-pm-loading i {
+    font-size: 14px;
+    animation: spin 1s linear infinite;
+}
+
+.stl-pm-spin {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+
+/* ========================================
+ * NetworkModal - 访问酒馆弹窗
+ * ======================================== */
+
+.stl-nm-modal {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    padding: 0;
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+/* 头部 */
+.stl-nm-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    background: #20a53a;
+    color: #fff;
+}
+
+.stl-nm-drag-handle {
+    cursor: move; /* 只有标题区域可拖动 */
+    user-select: none; /* 防止拖动时选中文本 */
+}
+
+.stl-nm-title {
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stl-nm-title i {
+    font-size: 18px;
+}
+
+.stl-nm-close {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #fff;
+    font-size: 16px;
+    transition: background 0.2s;
+    padding: 0;
+    line-height: 1;
+}
+
+.stl-nm-close:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+/* 端口信息栏 */
+.stl-nm-port {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: #f8faf8;
+    border-bottom: 1px solid #eef2ee;
+}
+
+.stl-nm-port-label {
+    font-size: 12px;
+    color: #888;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.stl-nm-port-label i {
+    font-size: 13px;
+}
+
+.stl-nm-port code {
+    font-size: 13px;
+    font-weight: 600;
+    color: #20a53a;
+    background: #e8f5e9;
+    padding: 2px 10px;
+    border-radius: 4px;
+}
+
+.stl-nm-btn-refresh {
+    margin-left: auto;
+    width: 28px;
+    height: 28px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #fff;
+    color: #666;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.stl-nm-btn-refresh:hover {
+    background: #f5f5f5;
+    border-color: #20a53a;
+    color: #20a53a;
+}
+
+/* 网络接口选择 */
+.stl-nm-section {
+    margin: 14px 20px 0;
+    padding: 12px;
+    background: #f9faf9;
+    border: 1px solid #e8ece8;
+    border-radius: 8px;
+}
+
+.stl-nm-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.stl-nm-section-title i {
+    font-size: 13px;
+    color: #20a53a;
+}
+
+.stl-nm-select {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #333;
+    background: #fff;
+    outline: none;
+    cursor: pointer;
+}
+
+.stl-nm-select:focus {
+    border-color: #20a53a;
+}
+
+/* 加载中 */
+.stl-nm-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 50px 20px;
+    color: #999;
+    font-size: 13px;
+}
+
+.stl-nm-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #e8e8e8;
+    border-top-color: #20a53a;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+
+/* 卡片容器 */
+.stl-nm-cards {
+    display: flex;
+    gap: 12px;
+    padding: 16px 20px;
+    flex-wrap: wrap; /* 允许换行，防止溢出 */
+}
+
+/* 单张卡片 */
+.stl-nm-card {
+    flex: 1;
+    min-width: 240px; /* 最小宽度，防止太窄 */
+    max-width: 280px; /* 最大宽度，防止太宽 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 14px 10px;
+    background: #fafafa;
+    border: 1px solid #eee;
+    border-radius: 10px;
+    transition: border-color 0.15s;
+}
+
+.stl-nm-card:hover {
+    border-color: #ccc;
+}
+
+/* 域名卡片（蓝色主题） */
+.stl-nm-card-proxy {
+    background: #f0f7ff;
+    border-color: #c8e0ff;
+}
+
+.stl-nm-card-proxy:hover {
+    border-color: #9ec5ff;
+}
+
+/* 不可用卡片 */
+.stl-nm-card-empty {
+    opacity: 0.45;
+}
+
+.stl-nm-card-empty:hover {
+    border-color: #eee;
+}
+
+/* 卡片标签 */
+.stl-nm-card-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.stl-nm-card-label i {
+    font-size: 12px;
+}
+
+/* 域名卡片标签 */
+.stl-nm-card-proxy .stl-nm-card-label {
+    color: #1a73e8;
+}
+
+/* QR 码容器 */
+.stl-nm-qr-wrap {
+    width: 160px;
+    height: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+}
+
+.stl-nm-qr {
+    background: #fff;
+    border-radius: 8px;
+    padding: 6px;
+    border: 1px solid #eee;
+}
+
+.stl-nm-qr canvas,
+.stl-nm-qr img,
+.stl-nm-qr table {
+    display: block !important;
+    border-radius: 4px;
+}
+
+.stl-nm-no-ip {
+    width: 160px;
+    height: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f5f5f5;
+    border: 1px dashed #ddd;
+    border-radius: 8px;
+    color: #bbb;
+    font-size: 12px;
+}
+
+/* 地址文本 */
+.stl-nm-card-url {
+    font-size: 11px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    color: #555;
+    text-align: center;
+    word-break: break-all;
+    padding: 5px 8px;
+    background: #f0f0f0;
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 8px;
+    user-select: all;
+}
+
+.stl-nm-card-proxy .stl-nm-card-url {
+    background: #e3f0ff;
+    color: #1a73e8;
+}
+
+/* 卡片操作按钮 */
+.stl-nm-card-actions {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+}
+
+.stl-nm-btn-sm {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 0;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #fff;
+    color: #666;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.stl-nm-btn-sm:hover {
+    background: #f5f5f5;
+    border-color: #ccc;
+}
+
+.stl-nm-btn-sm i {
+    font-size: 12px;
+}
+
+.stl-nm-btn-sm-primary {
+    background: #e8f5e9;
+    border-color: #a5d6a7;
+    color: #2e7d32;
+}
+
+.stl-nm-btn-sm-primary:hover {
+    background: #c8e6c9;
+    border-color: #81c784;
+}
+
+/* 底部提示 */
+.stl-nm-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 20px 16px;
+    color: #bbb;
+    font-size: 11px;
+}
+
+.stl-nm-footer i {
+    font-size: 13px;
+}
+
+/* 控制台访问酒馆按钮 */
+.stl-console-visit-btn {
+    background: #e8f5e9 !important;
+    border: 1px solid #a5d6a7 !important;
+    color: #2e7d32 !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    padding: 4px 12px !important;
+    border-radius: 4px !important;
+    transition: all 0.15s !important;
+    white-space: nowrap;
+}
+
+.stl-console-visit-btn:hover {
+    background: #c8e6c9 !important;
+    border-color: #81c784 !important;
+}
+
+.stl-console-visit-btn i {
+    font-size: 13px;
+}

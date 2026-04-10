@@ -13,18 +13,26 @@
 var Nginx = (function () {
     "use strict";
 
-    // ======== 常量 ========
+    // ======== 站点名（动态，由 proxy-modal 创建后缓存） ========
 
     /**
-     * 酒馆反向代理的唯一站点名（宝塔 site_name / domains 字段）
-     * 所有操作都以这个键为目标，不会影响其他站点。
+     * 当前代理站点的 site_name，从后端 proxy_site_name 配置读取
+     * 初始为空字符串，创建成功后由 ProxyModal 调用 setSiteName() 设置
      */
-    var PROXY_SITE_NAME = 'stl-sillytavern';
+    var _siteName = '';
+
+    /**
+     * 设置当前代理站点的 site_name
+     * @param {string} name  站点名（即用户绑定的域名）
+     */
+    function setSiteName(name) {
+        _siteName = name || '';
+    }
 
     /**
      * 固定备注，显示在宝塔反向代理列表里
      */
-    var PROXY_REMARK = 'SillyTavern 反向代理（由 STL 插件管理）';
+    var PROXY_REMARK = 'SillyTavern 反向代理服务';
 
     /**
      * 反向代理路径（默认根路径）
@@ -134,10 +142,34 @@ var Nginx = (function () {
      *   exists — 代理是否已存在
      *   proxy  — 代理条目原始数据（exists=true 时有值），含 id / proxy_pass / conf_path / ssl 等
      */
+    /**
+     * 内部：从列表条目判断是否是酒馆代理
+     *   优先用 _siteName 匹配条目 name
+     *   其次 ps 备注匹配
+     *   兜底（仅 _siteName 为空时）：proxy_pass 指向 127.0.0.1
+     */
+    function _isOurProxy(item) {
+        if (!item) return false;
+        // 优先：site_name 匹配条目 name
+        if (_siteName && (item.name || '') === _siteName) {
+            return true;
+        }
+        // 其次：ps 备注匹配
+        if ((item.ps || '') === PROXY_REMARK) {
+            return true;
+        }
+        // 兜底：_siteName 为空时，用 proxy_pass 特征匹配
+        // 避免误匹配其他用户的反向代理
+        if (!_siteName && (item.proxy_pass || '').indexOf('127.0.0.1') !== -1) {
+            return true;
+        }
+        return false;
+    }
+
     function getProxyInfo(callback) {
         _btRequest(
             '/mod/proxy/com/get_list',
-            { search: PROXY_SITE_NAME, p: 1, limit: 20 },
+            { p: 1, limit: 500 },
             function (rdata) {
                 if (!rdata || !rdata.status) {
                     if (callback) callback(_fail((rdata && rdata.msg) || '获取代理列表失败'));
@@ -146,7 +178,7 @@ var Nginx = (function () {
                 var list = (rdata.data && rdata.data.data) || [];
                 var found = null;
                 for (var i = 0; i < list.length; i++) {
-                    if (list[i].name === PROXY_SITE_NAME) {
+                    if (_isOurProxy(list[i])) {
                         found = list[i];
                         break;
                     }
@@ -193,7 +225,7 @@ var Nginx = (function () {
                 remark: PROXY_REMARK,
                 proxy_type: PROXY_TYPE,
                 proxy_pass: proxyPass,
-                domains: PROXY_SITE_NAME,
+                domains: _siteName,
                 proxy_host: '$http_host'
             },
             function (rdata) {
@@ -235,7 +267,7 @@ var Nginx = (function () {
                 {
                     remove_path: 1,
                     id: proxyId,
-                    site_name: PROXY_SITE_NAME
+                    site_name: _siteName
                 },
                 function (rdata) {
                     if (callback) callback({
@@ -278,7 +310,7 @@ var Nginx = (function () {
         _btRequest(
             '/mod/proxy/com/set_url_proxy',
             {
-                site_name: PROXY_SITE_NAME,
+                site_name: _siteName,
                 proxy_path: options.proxyPath || PROXY_PATH,
                 proxy_pass: proxyPass,
                 proxy_host: options.proxyHost || '$http_host',
@@ -393,7 +425,7 @@ var Nginx = (function () {
     function getSslInfo(callback) {
         _btRequest(
             '/site?action=GetSSL',
-            { siteName: PROXY_SITE_NAME },
+            { siteName: _siteName },
             function (rdata) {
                 if (!rdata) {
                     if (callback) callback(_fail('获取 SSL 信息失败'));
@@ -458,7 +490,7 @@ var Nginx = (function () {
         _btRequest(
             '/mod/proxy/com/set_ssl',
             {
-                site_name: PROXY_SITE_NAME,
+                site_name: _siteName,
                 key: encodeURIComponent(key),
                 csr: encodeURIComponent(cert)
             },
@@ -498,7 +530,7 @@ var Nginx = (function () {
             }
             var proxyId = info.proxy.id;
 
-            _btRequest(
+                _btRequest(
                 '/mod/proxy/com/apply_cert_api',
                 {
                     domains: domainsEncode,
@@ -507,7 +539,7 @@ var Nginx = (function () {
                     auto_wildcard: 0,
                     id: proxyId,
                     ca: 'letsencrypt',
-                    site_name: PROXY_SITE_NAME
+                    site_name: _siteName
                 },
                 function (rdata) {
                     if (callback) callback({
@@ -535,7 +567,7 @@ var Nginx = (function () {
         _btRequest(
             '/mod/proxy/com/set_force_https',
             {
-                site_name: PROXY_SITE_NAME,
+                site_name: _siteName,
                 force_https: enable ? 1 : 0
             },
             function (rdata) {
@@ -558,7 +590,7 @@ var Nginx = (function () {
     function closeSsl(callback) {
         _btRequest(
             '/mod/proxy/com/close_ssl',
-            { site_name: PROXY_SITE_NAME },
+            { site_name: _siteName },
             function (rdata) {
                 if (callback) callback({
                     status: !!(rdata && rdata.status),
@@ -608,6 +640,130 @@ var Nginx = (function () {
                     if (callback) callback({ status: true, step: 'done', msg: 'SSL 配置完成，强制 HTTPS 已开启' });
                 });
             });
+        });
+    }
+
+    /**
+     * 15. 添加绑定域名
+     *
+     * 通过宝塔 /mod/proxy/com/add_domain 接口，
+     * 将一个或多个域名绑定到已有的代理站点。
+     *
+     * @param {string}   domain     要添加的域名（如 'stl.example.com'）
+     * @param {function} callback   回调 function({ status, results, msg })
+     *   results: [{ name, status, msg }] 数组
+     */
+    function addDomain(domain, callback) {
+        if (!domain || !domain.trim()) {
+            if (callback) callback(_fail('域名不能为空'));
+            return;
+        }
+        getProxyInfo(function (info) {
+            if (!info.status || !info.exists) {
+                if (callback) callback(_fail('代理不存在，请先开启反向代理'));
+                return;
+            }
+            _btRequest(
+                '/mod/proxy/com/add_domain',
+                {
+                    id: info.proxy.id,
+                    site_name: _siteName,
+                    domains: domain.trim()
+                },
+                function (rdata) {
+                    if (!rdata || !rdata.status) {
+                        if (callback) callback({
+                            status: false,
+                            msg: (rdata && rdata.msg) || '添加域名失败',
+                            results: (rdata && rdata.data) || []
+                        });
+                        return;
+                    }
+                    if (callback) callback({
+                        status: true,
+                        msg: '域名添加完成',
+                        results: (rdata && rdata.data) || []
+                    });
+                },
+                function (msg) {
+                    if (callback) callback(_fail(msg));
+                }
+            );
+        });
+    }
+
+    /**
+     * 16. 删除绑定域名
+     *
+     * @param {string}   domain     要删除的域名
+     * @param {function} callback   回调 function({ status, msg })
+     */
+    function delDomain(domain, callback) {
+        if (!domain || !domain.trim()) {
+            if (callback) callback(_fail('域名不能为空'));
+            return;
+        }
+        getProxyInfo(function (info) {
+            if (!info.status || !info.exists) {
+                if (callback) callback(_fail('代理不存在'));
+                return;
+            }
+            _btRequest(
+                '/mod/proxy/com/del_domain',
+                {
+                    id: info.proxy.id,
+                    site_name: _siteName,
+                    domain: domain.trim(),
+                    port: 80
+                },
+                function (rdata) {
+                    if (callback) callback({
+                        status: !!(rdata && rdata.status),
+                        msg: (rdata && rdata.msg) || '未知响应'
+                    });
+                },
+                function (msg) {
+                    if (callback) callback(_fail(msg));
+                }
+            );
+        });
+    }
+
+    /**
+     * 17. 获取已绑定的域名列表
+     *
+     * @param {function} callback  回调 function({ status, domains, https_port, msg })
+     *   domains: [{ id, pid, name, port, addtime, cn_name, healthy }] 数组
+     */
+    function getDomainList(callback) {
+        getProxyInfo(function (info) {
+            if (!info.status || !info.exists) {
+                if (callback) callback({ status: true, domains: [], https_port: '', msg: '代理不存在' });
+                return;
+            }
+            _btRequest(
+                '/mod/proxy/com/get_domain_list',
+                {
+                    site_name: _siteName,
+                    id: info.proxy.id
+                },
+                function (rdata) {
+                    if (!rdata || !rdata.status) {
+                        if (callback) callback(_fail((rdata && rdata.msg) || '获取域名列表失败'));
+                        return;
+                    }
+                    var domainList = (rdata.data && rdata.data.domain_list) || [];
+                    if (callback) callback({
+                        status: true,
+                        domains: domainList,
+                        https_port: (rdata.data && rdata.data.https_port) || '',
+                        msg: 'OK'
+                    });
+                },
+                function (msg) {
+                    if (callback) callback(_fail(msg));
+                }
+            );
         });
     }
 
@@ -666,9 +822,20 @@ var Nginx = (function () {
          */
         setupSslWithLetsEncrypt: setupSslWithLetsEncrypt,
 
-        // --- 常量（只读） ---
+        // --- 域名绑定 ---
 
-        /** 当前使用的站点唯一键 */
-        PROXY_SITE_NAME: PROXY_SITE_NAME
+        /** 添加绑定域名 */
+        addDomain: addDomain,
+
+        /** 删除绑定域名 */
+        delDomain: delDomain,
+
+        /** 获取已绑定的域名列表 */
+        getDomainList: getDomainList,
+
+        // --- 站点名管理 ---
+
+        /** 设置当前代理的站点名（即用户绑定的域名），由 ProxyModal 调用 */
+        setSiteName: setSiteName
     };
 })();

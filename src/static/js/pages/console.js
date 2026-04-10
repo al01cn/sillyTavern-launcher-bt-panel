@@ -84,6 +84,9 @@ var ConsolePage = (function() {
                         '<span>实时日志</span>' +
                     '</div>' +
                     '<div class="stl-console-actions">' +
+                        '<button class="btn btn-bt-sm stl-console-visit-btn" id="console-btn-visit" onclick="NetworkModal.open()" style="display:none;" title="访问酒馆">' +
+                            '<i class="bi bi-box-arrow-up-right"></i> 访问酒馆' +
+                        '</button>' +
                         '<label class="stl-auto-scroll-toggle">' +
                             '<input type="checkbox" id="auto-scroll-checkbox" checked>' +
                             '<span>自动滚动</span>' +
@@ -187,6 +190,7 @@ var ConsolePage = (function() {
                     $('#console-btn-stop').show().prop('disabled', false);
                     $('#console-btn-force-stop').show().prop('disabled', false);
                     $('#console-btn-start').hide();
+                    $('#console-btn-visit').show();
                     _serviceRunning = true;
                     // 服务在跑 → 立即刷新日志 + 启动轮询
                     _fetchLogsOnce(function() {
@@ -196,6 +200,7 @@ var ConsolePage = (function() {
                     $('#console-btn-stop').hide();
                     $('#console-btn-force-stop').hide();
                     $('#console-btn-start').show();
+                    $('#console-btn-visit').hide();
                     _serviceRunning = false;
                     _stopPolling();
 
@@ -251,6 +256,7 @@ var ConsolePage = (function() {
                 $('#console-output').empty();
                 _appendLogLine(getCurrentTime(), 'SYSTEM', '--- PM2日志开始 ---');
                 if (rdata.lines && rdata.lines.length > 0) {
+                    _detectGoToUrl(rdata.lines);
                     _appendLines('out', rdata.lines);
                     success = true;
                 }
@@ -310,6 +316,7 @@ var ConsolePage = (function() {
             if (rdata.status && rdata.lines && rdata.lines.length > 0) {
                 hasNewOut = true;
                 _checkPortConflict(rdata.lines);
+                _detectGoToUrl(rdata.lines);
                 _appendLines('out', rdata.lines);
             }
             checkDone();
@@ -328,6 +335,20 @@ var ConsolePage = (function() {
             }
             checkDone();
         });
+    }
+
+    /**
+     * 从日志行中检测 'Go to: http://localhost:端口/' 并缓存端口
+     */
+    function _detectGoToUrl(lines) {
+        for (var i = 0; i < lines.length; i++) {
+            var content = lines[i].content || lines[i].raw || '';
+            var match = content.match(/Go to:\s*(https?:\/\/localhost:(\d+)\/?)/i);
+            if (match) {
+                CacheUtil.localSet('STL_REAL_PORT', match[2]);
+                break;  // 取最新一条就行
+            }
+        }
     }
 
     /**
@@ -379,6 +400,7 @@ var ConsolePage = (function() {
                 $('#console-output').empty();
                 _appendLogLine(getCurrentTime(), 'SYSTEM', '--- PM2日志开始 ---（已刷新）');
                 if (rdata.lines && rdata.lines.length > 0) {
+                    _detectGoToUrl(rdata.lines);
                     _appendLines('out', rdata.lines);
                     success = true;
                 }
@@ -509,6 +531,7 @@ var ConsolePage = (function() {
         $('#console-btn-stop').show().prop('disabled', false);
         $('#console-btn-force-stop').show().prop('disabled', false);
         $('#console-btn-start').hide();
+        $('#console-btn-visit').show();
 
         // 启动服务 → 立即启动轮询
         _startPolling();
@@ -527,6 +550,7 @@ var ConsolePage = (function() {
         // 隐藏停止按钮
         $('#console-btn-stop').hide();
         $('#console-btn-force-stop').hide();
+        $('#console-btn-visit').hide();
 
         // 显示并启用启动按钮（统一复用 _checkServiceStatus 判断酒馆是否已安装）
         $('#console-btn-start').show();

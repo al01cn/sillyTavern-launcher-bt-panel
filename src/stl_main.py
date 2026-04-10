@@ -996,10 +996,77 @@ class stl_main:
         """
         return self.pm2_stop(args)
 
+    def get_st_listen_port(self, args):
+        """从 PM2 out 日志中解析 SillyTavern 实际监听端口
+
+        解析日志中的 'Go to: http://localhost:端口/' 行，这是酒馆启动时
+        输出的最权威端口信息。
+
+        返回: { status, port, url }
+          - port: 端口号字符串（如 '8001'），解析失败为 ''
+          - url:  完整的 Go to URL（如 'http://localhost:8001/'），解析失败为 ''
+        """
+        import os
+        import re
+        import json
+
+        # 获取 out 日志路径
+        log_path = self._get_pm2_log_path('out')
+        if not log_path or not os.path.exists(log_path):
+            return {'status': False, 'port': '', 'url': ''}
+
+        # 检查进程是否在线
+        check = public.ExecShell('pm2 jlist')
+        process_running = False
+        try:
+            processes = json.loads(check[0]) if check[0] else []
+            for p in processes:
+                if p.get('name') == self.PM2_APP_NAME:
+                    status = p.get('pm2_env', {}).get('status', '')
+                    process_running = (status == 'online')
+                    break
+        except Exception:
+            pass
+
+        if not process_running:
+            return {'status': False, 'port': '', 'url': '', 'msg': '服务未运行'}
+
+        try:
+            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+        except Exception:
+            return {'status': False, 'port': '', 'url': ''}
+
+        # 从后往前找（最新的一行 Go to 优先）
+        pattern = re.compile(r'Go to:\s*(https?://localhost:(\d+)/?)', re.IGNORECASE)
+        matches = list(pattern.finditer(content))
+        if matches:
+            last_match = matches[-1]
+            url = last_match.group(1)
+            port = last_match.group(2)
+            return {'status': True, 'port': port, 'url': url}
+
+        return {'status': False, 'port': '', 'url': '', 'msg': '日志中未找到 Go to 信息'}
+
+    def _get_real_port(self):
+        """内部方法：获取酒馆实际监听端口
+
+        优先从 PM2 日志解析，降级到配置文件。
+        返回端口号字符串。
+        """
+        try:
+            result = self.get_st_listen_port({})
+            if result.get('status') and result.get('port'):
+                return result['port']
+        except Exception:
+            pass
+        return self.__get_config('tavern_port') or '8000'
+
     def _build_access_url(self, mode):
         """构建访问URL"""
         import socket
-        hostname = socket.gethostname()
+        port = self._get_real_port()
+
         if mode == 'lan':
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             try:
@@ -1009,11 +1076,15 @@ class stl_main:
                 ip = '127.0.0.1'
             finally:
                 s.close()
-            port = self.__get_config('tavern_port') or '8000'
             return f'http://{ip}:{port}'
         else:
-            port = self.__get_config('tavern_port') or '8000'
-            return f'http://localhost:{port}'
+            # 公网模式：尝试 curl 获取公网 IP
+            try:
+                result = self.get_public_ips({})
+                ip = result.get('ipv4') or result.get('ipv6') or 'localhost'
+            except Exception:
+                ip = 'localhost'
+            return f'http://{ip}:{port}'
 
     def get_access_url(self, args):
         """获取访问 URL（供前端状态刷新时调用）
@@ -1028,6 +1099,144 @@ class stl_main:
             return {'status': True, 'url': url}
         except Exception as e:
             return {'status': False, 'msg': str(e), 'url': ''}
+
+    def get_public_ips(self, args):
+        """获取服务器公网 IPv4 和 IPv6 地址（curl 方式）
+
+        分别通过 curl 4.ipw.cn 和 curl 6.ipw.cn 获取，超时 5 秒。
+
+        返回: { status, ipv4, ipv6 }
+        """
+        ipv4 = ''
+        ipv6 = ''
+        try:
+            out4, _ = public.ExecShell('curl -s --connect-timeout 5 4.ipw.cn')
+            if out4:
+                ipv4 = out4.strip()
+        except Exception:
+            pass
+        try:
+            out6, _ = public.ExecShell('curl -s --connect-timeout 5 6.ipw.cn')
+            if out6:
+                ipv6 = out6.strip()
+        except Exception:
+            pass
+        return {'status': True, 'ipv4': ipv4, 'ipv6': ipv6}
+
+    def get_network_interfaces(self, args):
+        """枚举服务器物理网卡的 IPv4 / IPv6 地址
+
+        遍历 /sys/class/net/ 获取网卡列表，排除 lo 和常见虚拟网卡，
+        通过 socket.getaddrinfo 获取每个网卡的地址。
+
+        返回: { status, interfaces: [{ name, ipv4: [], ipv6: [] }] }
+        """
+        import socket
+        import os
+
+        interfaces = []
+        net_path = '/sys/class/net/'
+
+        # 虚拟网卡关键词（小写匹配）
+        virtual_keywords = ('docker', 'veth', 'br-', 'virbr', 'lo')
+
+        if not os.path.isdir(net_path):
+            return {'status': True, 'interfaces': interfaces}
+
+        try:
+            iface_names = os.listdir(net_path)
+        except Exception:
+            return {'status': True, 'interfaces': interfaces}
+
+        for iface in sorted(iface_names):
+            # 过滤虚拟网卡
+            if iface == 'lo':
+                continue
+            lower = iface.lower()
+            if any(kw in lower for kw in virtual_keywords):
+                continue
+
+            # 检查网卡是否处于 UP 状态
+            oper_file = os.path.join(net_path, iface, 'operstate')
+            if os.path.exists(oper_file):
+                try:
+                    with open(oper_file, 'r') as f:
+                        state = f.read().strip()
+                    if state != 'up':
+                        continue
+                except Exception:
+                    pass
+
+            ipv4_list = []
+            ipv6_list = []
+
+            try:
+                addrs = socket.getaddrinfo(iface, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+                for family, _, _, _, sockaddr in addrs:
+                    ip = sockaddr[0]
+                    if family == socket.AF_INET and ip != '127.0.0.1':
+                        if ip not in ipv4_list:
+                            ipv4_list.append(ip)
+                    elif family == socket.AF_INET6:
+                        # 去掉 zone id（%eth0 后缀）
+                        clean = ip.split('%')[0]
+                        if clean not in ipv6_list:
+                            ipv6_list.append(clean)
+            except Exception:
+                pass
+
+            if ipv4_list or ipv6_list:
+                interfaces.append({
+                    'name': iface,
+                    'ipv4': ipv4_list,
+                    'ipv6': ipv6_list
+                })
+
+        return {'status': True, 'interfaces': interfaces}
+
+    # 保留旧接口别名，兼容可能的外部调用
+    def get_public_ip(self, args):
+        """获取服务器公网 IP（旧接口，内部转发到 get_public_ips）
+
+        返回: { status, ip }
+        """
+        result = self.get_public_ips(args)
+        ip = result.get('ipv4') or result.get('ipv6') or ''
+        return {'status': result['status'], 'ip': ip}
+
+    def get_config(self, args):
+        """读取插件配置项（供前端通用调用）
+
+        参数 args:
+          - key: 配置键名（可选，不传则返回所有配置）
+
+        返回: { status, value }
+        """
+        key = args.get('key') if args else None
+        try:
+            value = self.__get_config(key)
+            return {'status': True, 'value': value}
+        except Exception as e:
+            return {'status': False, 'msg': str(e)}
+
+    def set_config(self, args):
+        """写入插件配置项（供前端通用调用）
+
+        参数 args:
+          - key: 配置键名（必填）
+          - value: 配置值（必填）
+
+        返回: { status, msg }
+        """
+        key = args.get('key') if args else None
+        value = args.get('value') if args else None
+        if key is None:
+            return {'status': False, 'msg': 'key 参数不能为空'}
+        try:
+            self.__set_config(key, value)
+            return {'status': True, 'msg': '配置已保存'}
+        except Exception as e:
+            return {'status': False, 'msg': str(e)}
 
     def get_startup_info(self, args):
         """获取启动前的环境信息
