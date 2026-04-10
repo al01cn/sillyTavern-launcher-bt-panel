@@ -3030,6 +3030,48 @@ button.stl-proxy-btn i {
     font-size: 48px;
 }
 
+/* 角色卡加载中 */
+.stl-char-card .char-img-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--bt-primary);
+    font-size: 32px;
+    z-index: 2;
+}
+
+/* 旋转动画 */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spinning {
+    animation: spin 1s linear infinite;
+}
+
+/* 角色卡加载失败 */
+.stl-char-card .char-img-error {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 240, 240, 0.95);
+    color: #dc3545;
+    font-size: 36px;
+    z-index: 2;
+}
+
 /* 角色卡悬停遮罩 */
 .stl-char-card .char-overlay {
     position: absolute;

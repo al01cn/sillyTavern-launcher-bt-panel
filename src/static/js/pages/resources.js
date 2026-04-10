@@ -17,6 +17,9 @@ var ResourcesPage = (function() {
         expandedGroups: {}        // 展开的分组
     };
     
+    // 图片缓存（Blob URL 缓存，页面生命周期内有效）
+    var imageBlobCache = {};
+    
     // 工具函数
     function formatSize(bytes) {
         if (bytes < 1024) return bytes + ' B';
@@ -472,6 +475,12 @@ var ResourcesPage = (function() {
                         '<div class="char-img-placeholder" id="placeholder-' + card.file_name.replace(/[^a-zA-Z0-9]/g, '_') + '">' +
                             '<i class="bi bi-person"></i>' +
                         '</div>' +
+                        '<div class="char-img-loading" id="loading-' + card.file_name.replace(/[^a-zA-Z0-9]/g, '_') + '" style="display:none;">' +
+                            '<i class="bi bi-arrow-repeat spinning"></i>' +
+                        '</div>' +
+                        '<div class="char-img-error" id="error-' + card.file_name.replace(/[^a-zA-Z0-9]/g, '_') + '" style="display:none;">' +
+                            '<i class="bi bi-exclamation-triangle"></i>' +
+                        '</div>' +
                         '<img class="char-img" style="display:none;" id="img-' + card.file_name.replace(/[^a-zA-Z0-9]/g, '_') + '" alt="' + displayName + '"/>' +
                     '</div>' +
                     '<div class="char-info">' +
@@ -487,12 +496,23 @@ var ResourcesPage = (function() {
         html += '</div>';
         $content.html(html);
         
-        // 加载缩略图（批量并发）
-        loadCharThumbnails();
+        // 加载缩略图（Base64 转 Blob）
+        loadCharThumbnailsAsBlob();
     }
     
-    function loadCharThumbnails() {
-        var batchSize = 4;
+    // Base64 转 Blob
+    function base64ToBlob(base64, mime) {
+        var byteCharacters = atob(base64);
+        var byteNumbers = new Array(byteCharacters.length);
+        for (var i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        var byteArray = new Uint8Array(byteNumbers);
+        return new Blob([byteArray], { type: mime });
+    }
+    
+    function loadCharThumbnailsAsBlob() {
+        var batchSize = 5;
         var batches = [];
         
         for (var i = 0; i < state.charCards.length; i += batchSize) {
@@ -503,29 +523,65 @@ var ResourcesPage = (function() {
             if (batchIndex >= batches.length) return;
             
             var batch = batches[batchIndex];
-            var promises = batch.map(function(card) {
-                return new Promise(function(resolve) {
-                    var imgId = 'img-' + card.file_name.replace(/[^a-zA-Z0-9]/g, '_');
-                    var placeholderId = 'placeholder-' + card.file_name.replace(/[^a-zA-Z0-9]/g, '_');
-                    
-                    request_plugin('read_character_card_thumbnail', { file_name: card.file_name }, function(res) {
-                        if (res.status && res.base64) {
-                            var $img = $('#' + imgId);
-                            var $placeholder = $('#' + placeholderId);
-                            if ($img.length) {
-                                $img.attr('src', 'data:' + res.mime + ';base64,' + res.base64).show();
-                                $placeholder.hide();
-                            }
-                        }
-                        resolve();
-                    });
-                });
-            });
+            var loadedCount = 0;
             
-            Promise.all(promises).then(function() {
-                setTimeout(function() {
-                    processBatch(batchIndex + 1);
-                }, 100);
+            batch.forEach(function(card) {
+                var imgId = 'img-' + card.file_name.replace(/[^a-zA-Z0-9]/g, '_');
+                var placeholderId = 'placeholder-' + card.file_name.replace(/[^a-zA-Z0-9]/g, '_');
+                var loadingId = 'loading-' + card.file_name.replace(/[^a-zA-Z0-9]/g, '_');
+                var errorId = 'error-' + card.file_name.replace(/[^a-zA-Z0-9]/g, '_');
+                var $img = $('#' + imgId);
+                var $placeholder = $('#' + placeholderId);
+                var $loading = $('#' + loadingId);
+                var $error = $('#' + errorId);
+                
+                // 检查缓存
+                if (imageBlobCache[card.file_name]) {
+                    $img.attr('src', imageBlobCache[card.file_name]).show();
+                    $placeholder.hide();
+                    $loading.hide();
+                    $error.hide();
+                    loadedCount++;
+                    if (loadedCount === batch.length) {
+                        setTimeout(function() {
+                            processBatch(batchIndex + 1);
+                        }, 50);
+                    }
+                    return;
+                }
+                
+                // 显示加载中
+                $placeholder.hide();
+                $loading.show();
+                $error.hide();
+                
+                // 从后端获取 Base64
+                request_plugin('read_character_card_thumbnail', { file_name: card.file_name }, function(res) {
+                    if (res.status && res.base64) {
+                        // Base64 转 Blob
+                        var blob = base64ToBlob(res.base64, res.mime);
+                        var blobUrl = URL.createObjectURL(blob);
+                        
+                        // 存入缓存
+                        imageBlobCache[card.file_name] = blobUrl;
+                        
+                        $img.attr('src', blobUrl).show();
+                        $loading.hide();
+                        $error.hide();
+                    } else {
+                        // 显示加载失败
+                        console.error('图片加载失败:', card.file_name);
+                        $loading.hide();
+                        $error.show();
+                    }
+                    
+                    loadedCount++;
+                    if (loadedCount === batch.length) {
+                        setTimeout(function() {
+                            processBatch(batchIndex + 1);
+                        }, 50);
+                    }
+                });
             });
         }
         
