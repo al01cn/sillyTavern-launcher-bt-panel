@@ -4037,3 +4037,722 @@ class stl_main:
         
         public.ExecShell(f'xdg-open "{dir_path}"')
         return {'status': True, 'msg': '已打开目录'}
+
+    # ==================== 资源管理 ====================
+    # SillyTavern 数据目录结构: {酒馆路径}/data/default-user/{characters,worlds,chats}
+    # 对应 PC 端"使用酒馆数据"模式
+
+    def _get_st_data_path(self):
+        """获取 SillyTavern 用户数据目录（酒馆安装目录下的 data/default-user）"""
+        config = self.__get_config()
+        st_path = config.get('st_path', sillyTavern_path)
+        return os.path.join(st_path, 'data', 'default-user')
+
+    def _safe_filename(self, filename):
+        """安全检查文件名，防止路径遍历"""
+        if not filename or '..' in filename or '/' in filename or '\\' in filename:
+            return None
+        return filename
+
+    def _list_files_in_dir(self, sub_dir, extensions=None):
+        """列出目录下的文件，支持扩展名过滤"""
+        base_path = self._get_st_data_path()
+        target_dir = os.path.join(base_path, sub_dir)
+        
+        if not os.path.exists(target_dir):
+            return []
+        
+        result = []
+        try:
+            for fname in os.listdir(target_dir):
+                fpath = os.path.join(target_dir, fname)
+                if not os.path.isfile(fpath):
+                    continue
+                if extensions:
+                    ext = os.path.splitext(fname)[1].lower()
+                    if ext not in extensions:
+                        continue
+                stat = os.stat(fpath)
+                result.append({
+                    'file_name': fname,
+                    'size': stat.st_size,
+                    'modified_ms': int(stat.st_mtime * 1000)
+                })
+        except Exception as e:
+            public.WriteLog('STL', f'列出资源文件失败: {str(e)}')
+        
+        # 按修改时间倒序
+        result.sort(key=lambda x: x['modified_ms'], reverse=True)
+        return result
+
+    # ---------- 角色卡管理 ----------
+
+    def list_character_cards(self, args):
+        """列出角色卡 PNG 文件"""
+        files = self._list_files_in_dir('characters', ['.png', '.webp', '.jpg', '.jpeg'])
+        return {'status': True, 'data': files}
+
+    def delete_character_cards(self, args):
+        """删除角色卡"""
+        files = args.get('files', [])
+        if isinstance(files, str):
+            files = [files]
+        
+        base_path = self._get_st_data_path()
+        chars_dir = os.path.join(base_path, 'characters')
+        deleted = []
+        errors = []
+        
+        for fname in files:
+            safe_name = self._safe_filename(fname)
+            if not safe_name:
+                errors.append(f'非法文件名: {fname}')
+                continue
+            
+            fpath = os.path.join(chars_dir, safe_name)
+            if os.path.exists(fpath):
+                try:
+                    os.remove(fpath)
+                    deleted.append(safe_name)
+                except Exception as e:
+                    errors.append(f'{safe_name}: {str(e)}')
+            else:
+                errors.append(f'{safe_name}: 文件不存在')
+        
+        msg = f'已删除 {len(deleted)} 个角色卡'
+        if errors:
+            msg += f'，失败 {len(errors)} 个'
+        return {'status': True, 'msg': msg, 'deleted': deleted, 'errors': errors}
+
+    def import_character_card(self, args):
+        """导入角色卡（Base64 编码的文件内容）"""
+        filename = args.get('file_name', '')
+        content = args.get('content', '')  # Base64 编码
+        
+        safe_name = self._safe_filename(filename)
+        if not safe_name:
+            return {'status': False, 'msg': '非法文件名'}
+        
+        # 验证扩展名
+        ext = os.path.splitext(safe_name)[1].lower()
+        if ext not in ['.png', '.webp', '.jpg', '.jpeg']:
+            return {'status': False, 'msg': '仅支持 PNG/WebP/JPG 格式'}
+        
+        base_path = self._get_st_data_path()
+        chars_dir = os.path.join(base_path, 'characters')
+        
+        if not os.path.exists(chars_dir):
+            os.makedirs(chars_dir)
+        
+        fpath = os.path.join(chars_dir, safe_name)
+        
+        try:
+            import base64
+            file_data = base64.b64decode(content)
+            with open(fpath, 'wb') as f:
+                f.write(file_data)
+            return {'status': True, 'msg': f'导入成功: {safe_name}'}
+        except Exception as e:
+            return {'status': False, 'msg': f'导入失败: {str(e)}'}
+
+    def read_character_card_thumbnail(self, args):
+        """读取角色卡缩略图（Base64）"""
+        filename = args.get('file_name', '')
+        
+        safe_name = self._safe_filename(filename)
+        if not safe_name:
+            return {'status': False, 'msg': '非法文件名'}
+        
+        base_path = self._get_st_data_path()
+        fpath = os.path.join(base_path, 'characters', safe_name)
+        
+        if not os.path.exists(fpath):
+            return {'status': False, 'msg': '文件不存在'}
+        
+        try:
+            import base64
+            with open(fpath, 'rb') as f:
+                data = f.read()
+            
+            # 检测 MIME 类型
+            if filename.endswith('.png'):
+                mime = 'image/png'
+            elif filename.endswith('.webp'):
+                mime = 'image/webp'
+            else:
+                mime = 'image/jpeg'
+            
+            b64 = base64.b64encode(data).decode('ascii')
+            return {
+                'status': True,
+                'base64': b64,
+                'mime': mime,
+                'size': len(data)
+            }
+        except Exception as e:
+            return {'status': False, 'msg': f'读取失败: {str(e)}'}
+
+    def get_character_info(self, args):
+        """获取角色卡详细信息（解析 PNG 中的 JSON 数据）"""
+        filename = args.get('file_name', '')
+        
+        safe_name = self._safe_filename(filename)
+        if not safe_name:
+            return {'status': False, 'msg': '非法文件名'}
+        
+        base_path = self._get_st_data_path()
+        fpath = os.path.join(base_path, 'characters', safe_name)
+        
+        if not os.path.exists(fpath):
+            return {'status': False, 'msg': '文件不存在'}
+        
+        try:
+            import base64
+            import json
+            import zlib
+            
+            with open(fpath, 'rb') as f:
+                data = f.read()
+            
+            # 检测是否为 PNG 文件
+            if not data.startswith(b'\x89PNG'):
+                return {'status': False, 'msg': '不是有效的 PNG 文件'}
+            
+            # 解析 PNG 文本块
+            character_data = None
+            offset = 8  # 跳过 PNG 签名
+            
+            while offset + 12 <= len(data):
+                # 读取块长度和类型
+                chunk_length = int.from_bytes(data[offset:offset+4], 'big')
+                chunk_type = data[offset+4:offset+8].decode('ascii', errors='ignore')
+                chunk_data = data[offset+8:offset+8+chunk_length]
+                
+                # 检查文本块类型
+                if chunk_type in ['tEXt', 'zTXt', 'iTXt']:
+                    text_content = None
+                    
+                    if chunk_type == 'tEXt':
+                        # tEXt: keyword\0text
+                        null_pos = chunk_data.find(b'\x00')
+                        if null_pos >= 0:
+                            text_content = chunk_data[null_pos+1:].decode('utf-8', errors='ignore')
+                    
+                    elif chunk_type == 'zTXt':
+                        # zTXt: keyword\0compression_method\0compressed_text
+                        null_pos = chunk_data.find(b'\x00')
+                        if null_pos >= 0 and len(chunk_data) > null_pos + 2:
+                            compressed_data = chunk_data[null_pos+2:]
+                            try:
+                                text_content = zlib.decompress(compressed_data).decode('utf-8', errors='ignore')
+                            except:
+                                pass
+                    
+                    elif chunk_type == 'iTXt':
+                        # iTXt: keyword\0compression_flag\0compression_method\0language_tag\0translated_keyword\0text
+                        null_pos = chunk_data.find(b'\x00')
+                        if null_pos >= 0 and len(chunk_data) > null_pos + 5:
+                            compression_flag = chunk_data[null_pos + 1]
+                            text_data = chunk_data[null_pos + 5:]
+                            
+                            if compression_flag == 1:
+                                # 压缩的文本
+                                try:
+                                    text_content = zlib.decompress(text_data).decode('utf-8', errors='ignore')
+                                except:
+                                    pass
+                            else:
+                                # 未压缩的文本
+                                text_content = text_data.decode('utf-8', errors='ignore')
+                    
+                    # 尝试解析 JSON
+                    if text_content:
+                        try:
+                            parsed = json.loads(text_content)
+                            if isinstance(parsed, dict):
+                                character_data = parsed
+                                break
+                        except:
+                            pass
+                        
+                        # 尝试 Base64 解码后再解析 JSON
+                        try:
+                            import re
+                            cleaned = re.sub(r'\s+', '', text_content)
+                            if re.match(r'^[A-Za-z0-9+/=_-]+$', cleaned):
+                                # 补齐 Base64
+                                padding = 4 - (len(cleaned) % 4)
+                                if padding != 4:
+                                    cleaned += '=' * padding
+                                decoded = base64.b64decode(cleaned).decode('utf-8', errors='ignore')
+                                parsed = json.loads(decoded)
+                                if isinstance(parsed, dict):
+                                    character_data = parsed
+                                    break
+                        except:
+                            pass
+                
+                # 移动到下一个块
+                offset += 12 + chunk_length
+                
+                if chunk_type == 'IEND':
+                    break
+            
+            if not character_data:
+                return {'status': False, 'msg': '未在 PNG 中找到角色卡数据'}
+            
+            # 提取角色信息
+            data_field = character_data.get('data', {})
+            if not isinstance(data_field, dict):
+                data_field = {}
+            
+            # 提取世界书信息
+            world_info = self._extract_world_info(character_data)
+            
+            result = {
+                'name': data_field.get('name', character_data.get('name', '')),
+                'description': data_field.get('description', character_data.get('description', '')),
+                'personality': data_field.get('personality', character_data.get('personality', '')),
+                'scenario': data_field.get('scenario', character_data.get('scenario', '')),
+                'first_message': data_field.get('first_mes', data_field.get('firstMessage', character_data.get('first_mes', character_data.get('firstMessage', '')))),
+                'example_messages': data_field.get('mes_example', data_field.get('example_messages', character_data.get('mes_example', character_data.get('example_messages', '')))),
+                'tags': data_field.get('tags', character_data.get('tags', [])),
+                'creator_comment': data_field.get('creator_notes', data_field.get('creatorcomment', character_data.get('creator_notes', character_data.get('creatorcomment', '')))),
+                'avatar': data_field.get('avatar', character_data.get('avatar', '')),
+                'spec': character_data.get('spec', ''),
+                'spec_version': character_data.get('spec_version', ''),
+                'world_info': world_info
+            }
+            
+            return {'status': True, 'data': result}
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {'status': False, 'msg': f'解析失败: {str(e)}'}
+    
+    def _extract_world_info(self, parsed_data):
+        """从解析的数据中提取世界书信息"""
+        import json
+        
+        # 尝试从多个位置查找世界书数据
+        world_keys = ['character_book', 'worldbook', 'world_info', 'lorebook']
+        world_raw = None
+        
+        # 直接在根级别查找
+        for key in world_keys:
+            if key in parsed_data and isinstance(parsed_data[key], dict):
+                world_raw = parsed_data[key]
+                break
+        
+        # 在 data 字段中查找
+        if not world_raw and 'data' in parsed_data and isinstance(parsed_data['data'], dict):
+            for key in world_keys:
+                if key in parsed_data['data'] and isinstance(parsed_data['data'][key], dict):
+                    world_raw = parsed_data['data'][key]
+                    break
+        
+        # 在 extensions 中查找
+        if not world_raw:
+            extensions = parsed_data.get('data', {}).get('extensions', parsed_data.get('extensions', {}))
+            if isinstance(extensions, dict):
+                ext_keys = ['world', 'worldbook', 'character_book', 'lorebook']
+                for key in ext_keys:
+                    if key in extensions and isinstance(extensions[key], dict):
+                        world_raw = extensions[key]
+                        break
+        
+        if not world_raw or not isinstance(world_raw, dict):
+            return None
+        
+        # 标准化世界书数据
+        entries_raw = world_raw.get('entries', [])
+        if not isinstance(entries_raw, list):
+            entries_raw = []
+        
+        entries = []
+        for entry in entries_raw:
+            if not isinstance(entry, dict):
+                continue
+            
+            entries.append({
+                'uid': entry.get('uid'),
+                'keys': entry.get('keys', []) if isinstance(entry.get('keys'), list) else [],
+                'secondary_keys': entry.get('secondary_keys', []) if isinstance(entry.get('secondary_keys'), list) else [],
+                'comment': entry.get('comment', ''),
+                'content': entry.get('content', ''),
+                'enabled': entry.get('enabled', True),
+                'order': entry.get('order'),
+                'position': entry.get('position'),
+                'probability': entry.get('probability'),
+                'depth': entry.get('depth')
+            })
+        
+        return {
+            'name': world_raw.get('name', world_raw.get('title', world_raw.get('world_name', ''))),
+            'entries': entries,
+            'entry_count': len(entries)
+        }
+
+    # ---------- 世界书管理 ----------
+
+    def list_world_infos(self, args):
+        """列出世界书 JSON 文件"""
+        files = self._list_files_in_dir('worlds', ['.json'])
+        return {'status': True, 'data': files}
+
+    def delete_world_infos(self, args):
+        """删除世界书"""
+        files = args.get('files', [])
+        if isinstance(files, str):
+            files = [files]
+        
+        base_path = self._get_st_data_path()
+        worlds_dir = os.path.join(base_path, 'worlds')
+        deleted = []
+        errors = []
+        
+        for fname in files:
+            safe_name = self._safe_filename(fname)
+            if not safe_name:
+                errors.append(f'非法文件名: {fname}')
+                continue
+            
+            fpath = os.path.join(worlds_dir, safe_name)
+            if os.path.exists(fpath):
+                try:
+                    os.remove(fpath)
+                    deleted.append(safe_name)
+                except Exception as e:
+                    errors.append(f'{safe_name}: {str(e)}')
+            else:
+                errors.append(f'{safe_name}: 文件不存在')
+        
+        msg = f'已删除 {len(deleted)} 个世界书'
+        if errors:
+            msg += f'，失败 {len(errors)} 个'
+        return {'status': True, 'msg': msg, 'deleted': deleted, 'errors': errors}
+
+    def import_world_info(self, args):
+        """导入世界书（Base64 编码的文件内容）"""
+        filename = args.get('file_name', '')
+        content = args.get('content', '')  # Base64 编码
+        
+        safe_name = self._safe_filename(filename)
+        if not safe_name:
+            return {'status': False, 'msg': '非法文件名'}
+        
+        if not filename.endswith('.json'):
+            return {'status': False, 'msg': '世界书必须是 JSON 文件'}
+        
+        base_path = self._get_st_data_path()
+        worlds_dir = os.path.join(base_path, 'worlds')
+        
+        if not os.path.exists(worlds_dir):
+            os.makedirs(worlds_dir)
+        
+        fpath = os.path.join(worlds_dir, safe_name)
+        
+        try:
+            import base64
+            file_data = base64.b64decode(content)
+            # 验证 JSON 格式
+            json.loads(file_data.decode('utf-8'))
+            with open(fpath, 'wb') as f:
+                f.write(file_data)
+            return {'status': True, 'msg': f'导入成功: {safe_name}'}
+        except json.JSONDecodeError:
+            return {'status': False, 'msg': 'JSON 格式无效'}
+        except Exception as e:
+            return {'status': False, 'msg': f'导入失败: {str(e)}'}
+
+    def read_world_info_content(self, args):
+        """读取世界书内容"""
+        filename = args.get('file_name', '')
+        
+        safe_name = self._safe_filename(filename)
+        if not safe_name:
+            return {'status': False, 'msg': '非法文件名'}
+        
+        base_path = self._get_st_data_path()
+        fpath = os.path.join(base_path, 'worlds', safe_name)
+        
+        if not os.path.exists(fpath):
+            return {'status': False, 'msg': '文件不存在'}
+        
+        try:
+            content = public.ReadFile(fpath)
+            return {'status': True, 'content': content}
+        except Exception as e:
+            return {'status': False, 'msg': f'读取失败: {str(e)}'}
+
+    def get_world_info(self, args):
+        """获取世界书详细信息（解析 JSON）"""
+        filename = args.get('file_name', '')
+        
+        safe_name = self._safe_filename(filename)
+        if not safe_name:
+            return {'status': False, 'msg': '非法文件名'}
+        
+        base_path = self._get_st_data_path()
+        fpath = os.path.join(base_path, 'worlds', safe_name)
+        
+        if not os.path.exists(fpath):
+            return {'status': False, 'msg': '文件不存在'}
+        
+        try:
+            import json
+            
+            content = public.ReadFile(fpath)
+            parsed = json.loads(content)
+            
+            if not isinstance(parsed, dict):
+                return {'status': False, 'msg': '无效的世界书格式'}
+            
+            # 检查是否是世界书格式（有 entries 字段）
+            if 'entries' in parsed:
+                entries_raw = parsed['entries']
+                
+                # 处理 entries 是对象的情况（键为 "0", "1", "2"...）
+                if isinstance(entries_raw, dict):
+                    # 转换为列表
+                    entries_list = []
+                    for key in sorted(entries_raw.keys(), key=lambda x: int(x) if x.isdigit() else 0):
+                        if isinstance(entries_raw[key], dict):
+                            entries_list.append(entries_raw[key])
+                    entries_raw = entries_list
+                
+                if isinstance(entries_raw, list):
+                    # 直接是世界书格式
+                    world_info = {
+                        'name': parsed.get('name', parsed.get('title', filename.replace('.json', ''))),
+                        'entries': [],
+                        'entry_count': len(entries_raw)
+                    }
+                    # 标准化条目
+                    for entry in entries_raw:
+                        if isinstance(entry, dict):
+                            # 兼容多种字段名
+                            keys = entry.get('keys', entry.get('key', []))
+                            if isinstance(keys, str):
+                                keys = [keys]
+                            elif not isinstance(keys, list):
+                                keys = []
+                            
+                            secondary_keys = entry.get('secondary_keys', entry.get('keysecondary', []))
+                            if isinstance(secondary_keys, str):
+                                secondary_keys = [secondary_keys]
+                            elif not isinstance(secondary_keys, list):
+                                secondary_keys = []
+                            
+                            world_info['entries'].append({
+                                'uid': entry.get('uid'),
+                                'keys': keys,
+                                'secondary_keys': secondary_keys,
+                                'comment': entry.get('comment', ''),
+                                'content': entry.get('content', ''),
+                                'enabled': not entry.get('disable', entry.get('enabled', True) == False),
+                                'order': entry.get('order'),
+                                'position': entry.get('position'),
+                                'probability': entry.get('probability'),
+                                'depth': entry.get('depth')
+                            })
+                    world_info['entry_count'] = len(world_info['entries'])
+                else:
+                    world_info = None
+            else:
+                # 尝试从嵌套结构中提取
+                world_info = self._extract_world_info(parsed)
+            
+            if not world_info:
+                return {'status': False, 'msg': '未找到世界书数据'}
+            
+            return {'status': True, 'data': world_info}
+            
+        except json.JSONDecodeError:
+            return {'status': False, 'msg': 'JSON 格式无效'}
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {'status': False, 'msg': f'解析失败: {str(e)}'}
+
+    # ---------- 对话历史管理 ----------
+
+    def list_chats(self, args):
+        """列出对话历史（按角色分组）"""
+        base_path = self._get_st_data_path()
+        chats_dir = os.path.join(base_path, 'chats')
+        
+        if not os.path.exists(chats_dir):
+            return {'status': True, 'data': []}
+        
+        result = []
+        try:
+            # 遍历子目录（每个角色一个目录）
+            for folder in os.listdir(chats_dir):
+                folder_path = os.path.join(chats_dir, folder)
+                if not os.path.isdir(folder_path):
+                    continue
+                
+                # 解析角色名：default_角色名
+                if folder.startswith('default_'):
+                    char_name = folder[8:]  # 去掉 'default_' 前缀
+                else:
+                    char_name = folder
+                
+                files = []
+                for fname in os.listdir(folder_path):
+                    fpath = os.path.join(folder_path, fname)
+                    if not os.path.isfile(fpath):
+                        continue
+                    ext = os.path.splitext(fname)[1].lower()
+                    if ext not in ['.jsonl', '.json']:
+                        continue
+                    stat = os.stat(fpath)
+                    files.append({
+                        'file_name': fname,
+                        'size': stat.st_size,
+                        'modified_ms': int(stat.st_mtime * 1000)
+                    })
+                
+                # 按修改时间倒序
+                files.sort(key=lambda x: x['modified_ms'], reverse=True)
+                
+                result.append({
+                    'folder': folder,
+                    'char_name': char_name,
+                    'files': files
+                })
+        except Exception as e:
+            public.WriteLog('STL', f'列出对话历史失败: {str(e)}')
+        
+        # 按角色名排序
+        result.sort(key=lambda x: x['char_name'].lower())
+        return {'status': True, 'data': result}
+
+    def read_chat(self, args):
+        """读取对话历史消息"""
+        char_folder = args.get('char_folder', '')
+        file_name = args.get('file_name', '')
+
+        if not char_folder or not file_name:
+            return {'status': False, 'msg': '参数不完整'}
+
+        base_path = self._get_st_data_path()
+        fpath = os.path.join(base_path, 'chats', char_folder, file_name)
+
+        if not os.path.exists(fpath):
+            return {'status': False, 'msg': '文件不存在'}
+
+        try:
+            content = public.ReadFile(fpath)
+            messages = self._parse_chat_jsonl(content)
+            return {'status': True, 'data': messages}
+        except Exception as e:
+            return {'status': False, 'msg': f'读取失败: {str(e)}'}
+
+    def _parse_chat_jsonl(self, content):
+        """解析 JSONL 格式的对话文件"""
+        messages = []
+        for line in content.strip().split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+                # 标准化消息格式
+                messages.append({
+                    'name': msg.get('name', ''),
+                    'mes': msg.get('mes', msg.get('msg', '')),
+                    'isUser': msg.get('is_user', msg.get('isUser', False)),
+                    'isSystem': msg.get('is_system', msg.get('isSystem', False)),
+                    'sendDate': msg.get('send_date', msg.get('sendDate', ''))
+                })
+            except json.JSONDecodeError:
+                continue
+        return messages
+
+    def delete_chats(self, args):
+        """删除对话记录"""
+        folders = args.get('folders', [])  # [{folder, file_name}]
+        if isinstance(folders, str):
+            folders = [folders]
+        
+        base_path = self._get_st_data_path()
+        chats_dir = os.path.join(base_path, 'chats')
+        deleted = []
+        errors = []
+        
+        for item in folders:
+            if isinstance(item, str):
+                # 兼容旧格式：直接传文件名
+                folder, fname = 'default', item
+            else:
+                folder = item.get('folder', 'default')
+                fname = item.get('file_name', '')
+            
+            safe_folder = self._safe_filename(folder)
+            safe_name = self._safe_filename(fname)
+            
+            if not safe_folder or not safe_name:
+                errors.append(f'非法路径: {folder}/{fname}')
+                continue
+            
+            fpath = os.path.join(chats_dir, safe_folder, safe_name)
+            if os.path.exists(fpath):
+                try:
+                    os.remove(fpath)
+                    deleted.append(f'{safe_folder}/{safe_name}')
+                except Exception as e:
+                    errors.append(f'{safe_folder}/{safe_name}: {str(e)}')
+            else:
+                errors.append(f'{safe_folder}/{safe_name}: 文件不存在')
+        
+        msg = f'已删除 {len(deleted)} 个对话记录'
+        if errors:
+            msg += f'，失败 {len(errors)} 个'
+        return {'status': True, 'msg': msg, 'deleted': deleted, 'errors': errors}
+
+    def get_resource_stats(self, args):
+        """获取资源统计信息"""
+        base_path = self._get_st_data_path()
+        
+        stats = {
+            'characters': {'count': 0, 'total_size': 0},
+            'worlds': {'count': 0, 'total_size': 0},
+            'chats': {'count': 0, 'total_size': 0, 'groups': 0}
+        }
+        
+        # 角色卡
+        chars_dir = os.path.join(base_path, 'characters')
+        if os.path.exists(chars_dir):
+            for fname in os.listdir(chars_dir):
+                fpath = os.path.join(chars_dir, fname)
+                if os.path.isfile(fpath):
+                    stats['characters']['count'] += 1
+                    stats['characters']['total_size'] += os.path.getsize(fpath)
+        
+        # 世界书
+        worlds_dir = os.path.join(base_path, 'worlds')
+        if os.path.exists(worlds_dir):
+            for fname in os.listdir(worlds_dir):
+                fpath = os.path.join(worlds_dir, fname)
+                if os.path.isfile(fpath):
+                    stats['worlds']['count'] += 1
+                    stats['worlds']['total_size'] += os.path.getsize(fpath)
+        
+        # 对话历史
+        chats_dir = os.path.join(base_path, 'chats')
+        if os.path.exists(chats_dir):
+            for folder in os.listdir(chats_dir):
+                folder_path = os.path.join(chats_dir, folder)
+                if os.path.isdir(folder_path):
+                    stats['chats']['groups'] += 1
+                    for fname in os.listdir(folder_path):
+                        fpath = os.path.join(folder_path, fname)
+                        if os.path.isfile(fpath):
+                            stats['chats']['count'] += 1
+                            stats['chats']['total_size'] += os.path.getsize(fpath)
+        
+        return {'status': True, 'data': stats}
+
