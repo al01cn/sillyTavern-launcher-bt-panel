@@ -405,7 +405,7 @@ var TavernConfig = (function() {
                     '<p style="color: #999; margin: 20px 0;">' +
                         '请先前往版本管理页面安装 SillyTavern' +
                     '</p>' +
-                    '<button class="btn btn-primary" onclick="BTPlugin.showPage(\'versions\')">' +
+                    '<button class="btn btn-bt" onclick="BTPlugin.showPage(\'versions\')">' +
                         '<i class="bi bi-box-arrow-right"></i> 前往版本管理' +
                     '</button>' +
                 '</div>' +

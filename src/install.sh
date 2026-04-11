@@ -36,6 +36,41 @@ Install()
     chown -R root:root "${stl_path}"
     chmod -R 755 "${stl_path}"
 
+    # 检查并安装 Git
+    if ! command -v git >/dev/null 2>&1; then
+        echo "未检测到 Git，正在尝试安装..."
+        
+        # 检测包管理器并执行安装
+        if command -v apt-get >/dev/null 2>&1; then
+            # Debian/Ubuntu 系列
+            apt-get update -y
+            DEBIAN_FRONTEND=noninteractive apt-get install -y git
+        elif command -v dnf >/dev/null 2>&1; then
+            # Fedora/RHEL 8+/CentOS Stream 系列
+            dnf install -y git
+        elif command -v yum >/dev/null 2>&1; then
+            # CentOS 7/RHEL 7 系列
+            yum install -y git
+        elif command -v pacman >/dev/null 2>&1; then
+            # Arch Linux 系列
+            pacman -Sy --noconfirm git
+        else
+            echo "错误：未检测到支持的包管理器，请手动安装 Git。"
+            exit 1
+        fi
+
+        # 验证安装结果
+        if ! command -v git >/dev/null 2>&1; then
+            echo "错误：Git 安装失败。"
+            exit 1
+        fi
+    fi
+
+    echo "--------------------------------"
+    echo "Git 已就绪"
+    git --version
+    echo "--------------------------------"
+
     echo "=========================================="
     echo "{{#plugin_title#}} 插件安装完成！"
     echo "=========================================="

@@ -237,6 +237,7 @@ return {
     checkNode: function() { return window.checkNode && window.checkNode.apply(this, arguments); },
     checkGit: function() { return window.checkGit && window.checkGit.apply(this, arguments); },
     installNodeJs: function() { return window.installNodeJs && window.installNodeJs.apply(this, arguments); },
+    installGit: function() { return window.installGit && window.installGit.apply(this, arguments); },
     clearLogs: function() { return window.clearLogs && window.clearLogs.apply(this, arguments); },
     
         // 兼容旧接口

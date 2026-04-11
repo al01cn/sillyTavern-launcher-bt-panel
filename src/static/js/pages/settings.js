@@ -127,7 +127,10 @@ function renderSettingsPage() {
                         '<span class="stl-info-label"><i class="bi bi-git"></i> Git</span>' +
                         '<span class="stl-info-value" id="check-git">-</span>' +
                     '</div>' +
-                    '<button class="btn btn-bt-outline btn-bt-sm" onclick="checkGit(true)" style="margin-top: 8px;">检测</button>' +
+                    '<div class="stl-flex" style="gap:8px;margin-top:8px;">' +
+                        '<button class="btn btn-bt-outline btn-bt-sm" onclick="checkGit(true)">检测</button>' +
+                        '<button class="btn btn-bt btn-bt-sm" id="btn-install-git" onclick="installGit()" style="display:none;">一键安装</button>' +
+                    '</div>' +
                 '</div>' +
 
                 '<div class="stl-form-group">' +
@@ -1006,13 +1009,23 @@ function checkNode(showMsg) {
  */
 function stl_renderGitStatus(data) {
     var $el = $('#check-git');
+    var $btnInstall = $('#btn-install-git');
     if (!$el.length) return;
     if (data && data.installed) {
         $el.html('<span style="color: #20a53a;">' + (data.version || '') + ' 已安装</span>');
+        if ($btnInstall.length) {
+            $btnInstall.hide();
+        }
     } else if (data && data.installed === false) {
         $el.html('<span style="color: #d9534f;">未安装</span>');
+        if ($btnInstall.length) {
+            $btnInstall.show();
+        }
     } else {
         $el.html('-');
+        if ($btnInstall.length) {
+            $btnInstall.hide();
+        }
     }
 }
 
@@ -1094,6 +1107,76 @@ function installNodeJs() {
                 // 进度回调
                 if (progress && progress.msg) {
                     window.appendNodeJsLog('[INFO] ' + progress.msg);
+                }
+            }
+        );
+    });
+}
+
+/**
+ * 一键安装 Git
+ */
+function installGit() {
+    layer.confirm('将自动安装 Git，确认？', {
+        btn: ['确认', '取消']
+    }, function(index) {
+        layer.close(index);
+        
+        // 显示进度弹窗
+        var logContent = '<div id="git-install-log" style="height: 300px; overflow-y: auto; background: #1e1e1e; color: #ccc; padding: 15px; font-family: Consolas, monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all;">[系统] 正在准备安装环境...</div>';
+        
+        var dialogIndex = layer.open({
+            type: 1,
+            title: 'Git 安装进度',
+            area: ['600px', '400px'],
+            content: '<div style="padding: 15px;">' + logContent + '</div>',
+            closeBtn: 1,
+            shadeClose: false,
+            btn: ['后台运行'],
+            yes: function(idx) {
+                layer.close(idx);
+            }
+        });
+        
+        // 定义日志追加函数
+        window.appendGitLog = function(text) {
+            var $logDiv = $('#git-install-log');
+            if ($logDiv.length) {
+                $logDiv.text($logDiv.text() + text);
+                $logDiv.scrollTop($logDiv[0].scrollHeight);
+            }
+        };
+        
+        // 调用 Git 模块的安装方法
+        Git.installGit(
+            function(rdata) {
+                // 安装完成回调
+                if (rdata.status) {
+                    window.appendGitLog('[SUCCESS] ' + rdata.msg + '\n');
+                    setTimeout(function() {
+                        layer.close(dialogIndex);
+                        layer.msg('Git 安装成功！', { icon: 1 });
+                        // 重新检测 Git 状态
+                        checkGit(false);
+                    }, 1500);
+                } else {
+                    window.appendGitLog('[ERROR] ' + rdata.msg + '\n');
+                    setTimeout(function() {
+                        layer.close(dialogIndex);
+                        layer.msg('Git 安装失败: ' + rdata.msg, { icon: 2 });
+                    }, 1500);
+                }
+            },
+            function(log) {
+                // 日志回调
+                if (log) {
+                    window.appendGitLog(log);
+                }
+            },
+            function(progress) {
+                // 进度回调
+                if (progress && progress.msg) {
+                    window.appendGitLog('[INFO] ' + progress.msg + '\n');
                 }
             }
         );

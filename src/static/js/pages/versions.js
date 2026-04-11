@@ -554,6 +554,102 @@ function doRepairDeps(instanceId) {
  * 加载在线安装卡片
  */
 function loadOnlineInstallCard() {
+    // 先检查依赖（Node.js 和 Git）
+    checkDependenciesAndRender();
+}
+
+/**
+ * 检查依赖并渲染界面
+ */
+function checkDependenciesAndRender() {
+    var checkCount = 0;
+    var nodeInstalled = false;
+    var gitInstalled = false;
+    
+    // 检查 Node.js（使用与设置页面相同的接口）
+    request_plugin('get_nodejs_version', {}, function(rdata) {
+        nodeInstalled = !!(rdata && rdata.status);
+        checkCount++;
+        tryRender();
+    });
+    
+    // 检查 Git
+    request_plugin('is_git_installed', {}, function(rdata) {
+        gitInstalled = !!(rdata && rdata.installed);
+        checkCount++;
+        tryRender();
+    });
+    
+    function tryRender() {
+        if (checkCount >= 2) {
+            if (!nodeInstalled || !gitInstalled) {
+                // 依赖不满足，显示提示页面
+                renderDependencyWarning(nodeInstalled, gitInstalled);
+            } else {
+                // 依赖满足，正常加载在线安装卡片
+                renderOnlineInstallCardWithLoading();
+            }
+        }
+    }
+}
+
+/**
+ * 渲染依赖警告页面
+ */
+function renderDependencyWarning(nodeInstalled, gitInstalled) {
+    var html =
+        '<div class="stl-card">' +
+            '<div class="stl-card-title">' +
+                '<i class="bi bi-exclamation-triangle" style="color: #f0ad4e;"></i> 环境依赖检查' +
+            '</div>' +
+            '<div style="padding: 30px 20px;">' +
+                '<div style="text-align: center; margin-bottom: 25px;">' +
+                    '<i class="bi bi-exclamation-octagon" style="font-size: 64px; color: #f0ad4e; opacity: 0.8;"></i>' +
+                    '<h3 style="margin-top: 15px; color: #333;">缺少必要的依赖</h3>' +
+                    '<p style="color: #999; margin-top: 10px;">在线安装 SillyTavern 需要以下环境：</p>' +
+                '</div>' +
+                
+                '<div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px;">' +
+                    '<div style="display: flex; align-items: center; margin-bottom: 15px; padding: 12px; background: ' + (nodeInstalled ? '#d4edda' : '#f8d7da') + '; border-radius: 6px;">' +
+                        '<i class="bi ' + (nodeInstalled ? 'bi-check-circle-fill' : 'bi-x-circle-fill') + '" style="font-size: 24px; color: ' + (nodeInstalled ? '#28a745' : '#dc3545') + '; margin-right: 12px;"></i>' +
+                        '<div style="flex: 1;">' +
+                            '<div style="font-weight: bold; color: #333;">Node.js <span style="color: #dc3545; font-size: 12px;">*必需</span></div>' +
+                            '<div style="font-size: 12px; color: #666; margin-top: 2px;">' + (nodeInstalled ? '已安装' : '未安装 - 启动酒馆必需') + '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    
+                    '<div style="display: flex; align-items: center; padding: 12px; background: ' + (gitInstalled ? '#d4edda' : '#fff3cd') + '; border-radius: 6px;">' +
+                        '<i class="bi ' + (gitInstalled ? 'bi-check-circle-fill' : 'bi-dash-circle-fill') + '" style="font-size: 24px; color: ' + (gitInstalled ? '#28a745' : '#ffc107') + '; margin-right: 12px;"></i>' +
+                        '<div style="flex: 1;">' +
+                            '<div style="font-weight: bold; color: #333;">Git <span style="color: #ffc107; font-size: 12px;">*在线安装必需</span></div>' +
+                            '<div style="font-size: 12px; color: #666; margin-top: 2px;">' + (gitInstalled ? '已安装' : '未安装 - 用于克隆仓库') + '</div>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>' +
+                
+                '<div style="background: #e7f3ff; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 20px; border-radius: 4px;">' +
+                    '<div style="font-size: 13px; color: #004085;">' +
+                        '<i class="bi bi-info-circle"></i> ' +
+                        '<strong>提示：</strong>本地已安装的酒馆只需要 Node.js，Git 仅用于在线安装（从 GitHub 克隆）。' +
+                    '</div>' +
+                '</div>' +
+                
+                '<div style="text-align: center;">' +
+                    '<button class="btn btn-bt" onclick="BTPlugin.showPage(\'settings\')" style="padding: 10px 30px; font-size: 14px;">' +
+                        '<i class="bi bi-gear"></i> 前往设置安装依赖' +
+                    '</button>' +
+                    '<p style="color: #999; font-size: 12px; margin-top: 10px;">在“环境检测”区域点击一键安装按钮</p>' +
+                '</div>' +
+            '</div>' +
+        '</div>';
+    
+    $('#online-install-card').html(html);
+}
+
+/**
+ * 渲染带加载状态的在线安装卡片
+ */
+function renderOnlineInstallCardWithLoading() {
     var cardHtml =
         '<div class="stl-card">' +
             '<div class="stl-card-title">' +
