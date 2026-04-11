@@ -519,6 +519,11 @@ body {
     transition: all 0.2s;
 }
 
+/* 本地实例列表容器 - 增加上边距，避免与按钮贴合 */
+#local-instance-list {
+    margin-top: 15px;
+}
+
 .stl-version-item:hover {
     border-color: var(--bt-primary);
     box-shadow: 0 2px 8px rgba(32, 165, 58, 0.15);

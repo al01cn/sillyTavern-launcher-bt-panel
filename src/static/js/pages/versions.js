@@ -75,35 +75,90 @@ function switchVersionTab(tab) {
  * 加载本地实例列表
  */
 function loadLocalInstances() {
-    SillyTavern.listInstances(function(rdata) {
-        if (rdata.status) {
-            renderLocalInstancesList(rdata.instances || []);
-        } else {
-            layer.msg(rdata.msg || '加载失败', { icon: 2 });
+    var currentPath = '';
+    var isDefault = false;
+    var loadedCount = 0;
+    
+    // 并行获取当前路径和 is_default 标记
+    request_plugin('get_current_tavern_path', {}, function(pathData) {
+        if (pathData.status) {
+            currentPath = pathData.path || '';
         }
+        loadedCount++;
+        tryRender();
     });
+    
+    request_plugin('get_config', { key: 'is_default' }, function(configData) {
+        if (configData.status) {
+            isDefault = configData.value === true;
+        }
+        loadedCount++;
+        tryRender();
+    });
+    
+    function tryRender() {
+        if (loadedCount >= 2) {
+            SillyTavern.listInstances(function(rdata) {
+                if (rdata.status) {
+                    renderLocalInstancesList(rdata.instances || [], currentPath, isDefault);
+                } else {
+                    layer.msg(rdata.msg || '加载失败', { icon: 2 });
+                }
+            });
+        }
+    }
 }
 
 /**
  * 渲染本地实例列表
+ * @param {Array} instances - 实例列表
+ * @param {string} currentPath - 当前激活的酒馆路径
+ * @param {boolean} isDefault - 是否使用在线默认版本
  */
-function renderLocalInstancesList(instances) {
+function renderLocalInstancesList(instances, currentPath, isDefault) {
     if (!instances || instances.length === 0) {
         $('#local-instance-list').html(
             '<div class="stl-empty">' +
                 '<i class="bi bi-folder2-open"></i>' +
-                '<p>暂无实例，点击"手动添加"开始使用</p>' +
+                '<p>暂无实例，点击“手动添加”开始使用</p>' +
             '</div>'
         );
         return;
     }
 
-    var currentInstanceId = SillyTavern.getCurrentInstanceId();
     var html = '';
 
     instances.forEach(function(inst) {
-        var isCurrent = inst.id === currentInstanceId || inst.is_default;
+        // 判断是否为当前实例：
+        // 1. 如果 isDefault=true，表示当前使用在线版本，所有本地实例都不是当前
+        // 2. 如果 isDefault=false，根据路径匹配判断
+        var isCurrent = !isDefault && inst.path === currentPath;
         var currentBadge = isCurrent ? '<span class="stl-version-badge stl-version-badge-current">当前</span>' : '';
+        
+        // 构建操作按钮
+        var actionsHtml = '';
+        
+        // 切换按钮（非当前实例才显示）
+        if (!isCurrent) {
+            actionsHtml += '<button class="btn btn-bt btn-bt-sm" onclick="BTPlugin.doSwitchInstance(\'' + inst.id + '\')">切换</button>';
+        }
+        
+        // 依赖相关按钮
+        if (!inst.has_deps || inst.node_modules_empty) {
+            // 没有 node_modules 或 node_modules 为空，显示“安装依赖”
+            actionsHtml += '<button class="btn btn-bt-outline btn-bt-sm" onclick="BTPlugin.doInstallDeps(\'' + inst.id + '\')" style="margin-left:5px;">' +
+                '<i class="bi bi-download"></i> 安装依赖' +
+                '</button>';
+        } else if (!inst.deps_complete && inst.missing_deps_count > 0) {
+            // 有 node_modules 且不为空，但依赖不完整，显示“修复缺失依赖”
+            var missingText = ' (' + inst.missing_deps_count + '个缺失)';
+            actionsHtml += '<button class="btn btn-warning btn-bt-sm" onclick="BTPlugin.doRepairDeps(\'' + inst.id + '\')" style="margin-left:5px;">' +
+                '<i class="bi bi-wrench"></i> 修复缺失依赖' + missingText +
+                '</button>';
+        }
+        
+        // 删除按钮
+        actionsHtml += '<button class="btn btn-bt-danger btn-bt-sm" onclick="BTPlugin.doRemoveInstance(\'' + inst.id + '\')" style="margin-left:5px;">删除</button>';
 
         html +=
             '<div class="stl-version-item ' + (isCurrent ? 'current' : '') + '">' +
@@ -116,8 +171,7 @@ function renderLocalInstancesList(instances) {
                     '</div>' +
                 '</div>' +
                 '<div class="stl-version-actions">' +
-                    (isCurrent ? '' : '<button class="btn btn-bt btn-bt-sm" onclick="BTPlugin.doSwitchInstance(\'' + inst.id + '\')">切换</button>') +
-                    '<button class="btn btn-bt-danger btn-bt-sm" onclick="BTPlugin.doRemoveInstance(\'' + inst.id + '\')">删除</button>' +
+                    actionsHtml +
                 '</div>' +
             '</div>';
     });
@@ -277,6 +331,226 @@ function doRemoveInstance(instanceId) {
 }
 
 /**
+ * 执行安装依赖操作
+ */
+function doInstallDeps(instanceId) {
+    layer.confirm('确定要为此实例安装依赖吗？<br><span style="color: #999; font-size: 12px;">这可能需要几分钟时间</span>', {
+        icon: 3,
+        title: '确认安装',
+        btn: ['开始安装', '取消']
+    }, function(index) {
+        layer.close(index);
+
+        // 创建日志窗口
+        var logHtml =
+            '<div id="deps-install-log-container" style="height: 400px; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; padding: 10px; font-family: monospace; font-size: 12px;">' +
+                '<div class="log-info">[INFO] 正在启动依赖安装程序...</div>' +
+            '</div>';
+
+        var isInstalling = true;
+        var logIndex = layer.open({
+            type: 1,
+            title: '安装依赖进度',
+            area: ['700px', '500px'],
+            content: logHtml,
+            closeBtn: 1,
+            shadeClose: false,
+            cancel: function() {
+                if (isInstalling) {
+                    layer.confirm('依赖安装正在进行中，确定要取消吗？', {
+                        icon: 3,
+                        title: '确认取消',
+                        btn: ['确定取消', '继续安装']
+                    }, function(confirmIndex) {
+                        layer.close(confirmIndex);
+                        isInstalling = false;
+                        layer.close(logIndex);
+                        layer.msg('已取消安装', { icon: 2 });
+                    });
+                }
+                return false;
+            }
+        });
+
+        function appendLog(text, level) {
+            var container = $('#deps-install-log-container');
+            var logClass = 'log-' + (level || 'info');
+            var escapedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            container.append('<div class="' + logClass + '">' + escapedText + '</div>');
+            container.scrollTop(container[0].scrollHeight);
+        }
+
+        // 调用后端安装依赖接口（异步）
+        request_plugin('install_st_deps_with_log', { instance_id: instanceId }, function(rdata) {
+            if (!rdata.status) {
+                isInstalling = false;
+                appendLog('[ERROR] ' + rdata.msg, 'error');
+                setTimeout(function() {
+                    layer.close(logIndex);
+                    layer.msg('安装失败: ' + rdata.msg, { icon: 2 });
+                }, 2000);
+                return;
+            }
+            
+            // 开始轮询日志
+            var logFile = rdata.log_file;
+            var logPos = 0;
+            var pollTimer = setInterval(function() {
+                if (!isInstalling) {
+                    clearInterval(pollTimer);
+                    return;
+                }
+                
+                request_plugin('get_install_deps_log', { log_file: logFile, pos: logPos }, function(logData) {
+                    if (logData.status && logData.log) {
+                        logPos = logData.pos;
+                        var lines = logData.log.split('\n');
+                        lines.forEach(function(line) {
+                            if (line.trim()) {
+                                var level = 'info';
+                                if (line.indexOf('ERR!') !== -1 || line.indexOf('error') !== -1 || line.indexOf('fatal') !== -1) {
+                                    level = 'error';
+                                } else if (line.indexOf('WARN') !== -1 || line.indexOf('warning') !== -1) {
+                                    level = 'warn';
+                                } else if (line.indexOf('npm') !== -1) {
+                                    level = 'npm';
+                                }
+                                appendLog(line, level);
+                            }
+                        });
+                    }
+                    
+                    // 如果完成，停止轮询
+                    if (logData.done) {
+                        clearInterval(pollTimer);
+                        isInstalling = false;
+                        
+                        if (rdata.status) {
+                            appendLog('[SUCCESS] ' + rdata.msg, 'success');
+                            setTimeout(function() {
+                                layer.close(logIndex);
+                                layer.msg('依赖安装成功', { icon: 1 });
+                                loadLocalInstances();
+                            }, 1500);
+                        }
+                    }
+                });
+            }, 500); // 每 500ms 轮询一次
+        });
+    });
+}
+
+/**
+ * 执行修复缺失依赖操作
+ */
+function doRepairDeps(instanceId) {
+    layer.confirm('检测到部分依赖缺失，是否重新安装所有依赖？<br><span style="color: #999; font-size: 12px;">这将重新执行 npm install</span>', {
+        icon: 3,
+        title: '确认修复',
+        btn: ['开始修复', '取消']
+    }, function(index) {
+        layer.close(index);
+
+        // 创建日志窗口
+        var logHtml =
+            '<div id="deps-repair-log-container" style="height: 400px; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; padding: 10px; font-family: monospace; font-size: 12px;">' +
+                '<div class="log-info">[INFO] 正在启动依赖修复程序...</div>' +
+            '</div>';
+
+        var isInstalling = true;
+        var logIndex = layer.open({
+            type: 1,
+            title: '修复依赖进度',
+            area: ['700px', '500px'],
+            content: logHtml,
+            closeBtn: 1,
+            shadeClose: false,
+            cancel: function() {
+                if (isInstalling) {
+                    layer.confirm('依赖修复正在进行中，确定要取消吗？', {
+                        icon: 3,
+                        title: '确认取消',
+                        btn: ['确定取消', '继续修复']
+                    }, function(confirmIndex) {
+                        layer.close(confirmIndex);
+                        isInstalling = false;
+                        layer.close(logIndex);
+                        layer.msg('已取消修复', { icon: 2 });
+                    });
+                }
+                return false;
+            }
+        });
+
+        function appendLog(text, level) {
+            var container = $('#deps-repair-log-container');
+            var logClass = 'log-' + (level || 'info');
+            var escapedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            container.append('<div class="' + logClass + '">' + escapedText + '</div>');
+            container.scrollTop(container[0].scrollHeight);
+        }
+
+        // 调用后端修复依赖接口（异步）
+        request_plugin('install_st_deps_with_log', { instance_id: instanceId }, function(rdata) {
+            if (!rdata.status) {
+                isInstalling = false;
+                appendLog('[ERROR] ' + rdata.msg, 'error');
+                setTimeout(function() {
+                    layer.close(logIndex);
+                    layer.msg('修复失败: ' + rdata.msg, { icon: 2 });
+                }, 2000);
+                return;
+            }
+            
+            // 开始轮询日志
+            var logFile = rdata.log_file;
+            var logPos = 0;
+            var pollTimer = setInterval(function() {
+                if (!isInstalling) {
+                    clearInterval(pollTimer);
+                    return;
+                }
+                
+                request_plugin('get_install_deps_log', { log_file: logFile, pos: logPos }, function(logData) {
+                    if (logData.status && logData.log) {
+                        logPos = logData.pos;
+                        var lines = logData.log.split('\n');
+                        lines.forEach(function(line) {
+                            if (line.trim()) {
+                                var level = 'info';
+                                if (line.indexOf('ERR!') !== -1 || line.indexOf('error') !== -1 || line.indexOf('fatal') !== -1) {
+                                    level = 'error';
+                                } else if (line.indexOf('WARN') !== -1 || line.indexOf('warning') !== -1) {
+                                    level = 'warn';
+                                } else if (line.indexOf('npm') !== -1) {
+                                    level = 'npm';
+                                }
+                                appendLog(line, level);
+                            }
+                        });
+                    }
+                    
+                    // 如果完成，停止轮询
+                    if (logData.done) {
+                        clearInterval(pollTimer);
+                        isInstalling = false;
+                        
+                        if (rdata.status) {
+                            appendLog('[SUCCESS] ' + rdata.msg, 'success');
+                            setTimeout(function() {
+                                layer.close(logIndex);
+                                layer.msg('依赖修复成功', { icon: 1 });
+                                loadLocalInstances();
+                            }, 1500);
+                        }
+                    }
+                });
+            }, 500); // 每 500ms 轮询一次
+        });
+    });
+}
+
+/**
  * 加载在线安装卡片
  */
 function loadOnlineInstallCard() {
@@ -337,13 +611,43 @@ function renderOnlineInstallCard(versionInfo) {
                     '</div>' +
                 '</div>';
 
-            actionButtons =
-                '<button class="btn btn-bt btn-bt-sm" onclick="BTPlugin.switchToOnlineVersion()">' +
-                    '<i class="bi bi-arrow-right-circle"></i> 切换到在线版' +
-                '</button>' +
-                '<button class="btn btn-bt-outline btn-bt-sm" onclick="BTPlugin.checkForUpdate(\'' + currentVersion + '\', \'' + onlineVersion + '\')">' +
-                    '<i class="bi bi-arrow-clockwise"></i> 检查更新' +
-                '</button>';
+            // 获取当前激活路径和 is_default 标记，判断是否已切换到在线版本
+            request_plugin('get_current_tavern_path', {}, function(pathData) {
+                var currentPath = pathData.status ? (pathData.path || '') : '';
+                
+                request_plugin('get_config', { key: 'is_default' }, function(configData) {
+                    var isDefault = configData.status ? (configData.value === true) : false;
+                    
+                    // 如果 is_default=true，表示当前使用在线版本（不管路径是什么）
+                    var isCurrentOnline = isDefault;
+                    
+                    actionButtons = '';
+                    
+                    // 只有当前不是在线版本时，才显示“切换到在线版”按钮
+                    if (!isCurrentOnline) {
+                        actionButtons +=
+                            '<button class="btn btn-bt btn-bt-sm" onclick="BTPlugin.switchToOnlineVersion()">' +
+                                '<i class="bi bi-arrow-right-circle"></i> 切换' +
+                            '</button>';
+                    }
+                    
+                    actionButtons +=
+                        '<button class="btn btn-bt-outline btn-bt-sm" onclick="BTPlugin.checkForUpdate(\'' + currentVersion + '\', \'' + onlineVersion + '\')">' +
+                            '<i class="bi bi-arrow-clockwise"></i> 检查更新' +
+                        '</button>';
+                    
+                    var html =
+                        '<div class="stl-install-card-inner">' +
+                            statusHtml +
+                            '<div class="stl-install-actions">' +
+                                actionButtons +
+                            '</div>' +
+                        '</div>';
+
+                    $('#online-install-content').html(html);
+                });
+            });
+            return; // 提前返回，避免重复渲染
         } else {
             // 未安装
             statusHtml =

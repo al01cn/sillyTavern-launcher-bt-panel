@@ -167,7 +167,11 @@ function switchToOnlineVersion() {
             layer.close(loadingIndex);
             if (rdata && rdata.status) {
                 layer.msg('已切换到在线版本', { icon: 1 });
-                // 如果当前在版本页，刷新列表
+                // 如果当前在版本页，刷新列表和在线卡片
+                // 注意：需要先刷新，因为 set_tavern_path 已经更新了 is_default
+                if (typeof loadOnlineInstallCard === 'function') {
+                    loadOnlineInstallCard();
+                }
                 if (typeof loadLocalInstances === 'function') {
                     loadLocalInstances();
                 }
@@ -196,6 +200,8 @@ return {
     addStInstance: function() { return window.addStInstance && window.addStInstance.apply(this, arguments); },
     doSwitchInstance: function() { return window.doSwitchInstance && window.doSwitchInstance.apply(this, arguments); },
     doRemoveInstance: function() { return window.doRemoveInstance && window.doRemoveInstance.apply(this, arguments); },
+    doInstallDeps: function() { return window.doInstallDeps && window.doInstallDeps.apply(this, arguments); },
+    doRepairDeps: function() { return window.doRepairDeps && window.doRepairDeps.apply(this, arguments); },
     checkForUpdate: function() { return window.checkForUpdate && window.checkForUpdate.apply(this, arguments); },
     installLatestVersion: function() { return window.installLatestVersion && window.installLatestVersion.apply(this, arguments); },
     

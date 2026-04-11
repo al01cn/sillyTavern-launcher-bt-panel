@@ -2805,7 +2805,8 @@ class stl_main:
         # 4. 检查并安装依赖
         deps_check = self._check_and_install_deps(st_path)
         if not deps_check['status']:
-            return {'status': False, 'msg': '依赖安装失败: ' + deps_check.get('msg', '')}
+            # 依赖安装失败，但仍允许添加实例（用户可后续手动安装）
+            pass
 
         # 5. 获取分支信息
         branch = 'release'  # 默认分支
@@ -2913,19 +2914,178 @@ class stl_main:
         if not os.path.isdir(target['path']):
             return {'status': False, 'msg': '实例路径不存在: ' + target['path']}
 
-        # 更新默认标记
-        for inst in instances:
-            inst['is_default'] = (inst['id'] == instance_id)
-
-        self.__set_config('sillytavern_instances', instances)
+        # 切换到本地实例：设置 is_default=false，sillytavern_path=实例路径
+        self.__set_config('is_default', False)
         self.__set_config('sillytavern_path', target['path'])
 
         return {'status': True, 'msg': '已切换到: ' + target['path'], 'path': target['path']}
 
+    def install_st_deps(self, args):
+        """为指定实例安装依赖（同步方式，不返回实时日志）
+
+        参数 args:
+          - instance_id: 实例 ID
+        返回: { status, msg }
+        """
+        instance_id = (args.get('instance_id') or '').strip()
+        if not instance_id:
+            return {'status': False, 'msg': '实例 ID 不能为空'}
+
+        instances = self.__get_config('sillytavern_instances') or []
+
+        # 查找目标实例
+        target = None
+        for inst in instances:
+            if inst['id'] == instance_id:
+                target = inst
+                break
+
+        if not target:
+            return {'status': False, 'msg': '未找到指定的实例'}
+
+        # 验证路径有效性
+        if not os.path.isdir(target['path']):
+            return {'status': False, 'msg': '实例路径不存在: ' + target['path']}
+
+        # 检查并安装依赖
+        deps_check = self._check_and_install_deps(target['path'])
+        if deps_check['status']:
+            return {'status': True, 'msg': '依赖安装成功'}
+        else:
+            return {'status': False, 'msg': deps_check.get('msg', '依赖安装失败')}
+
+    def install_st_deps_with_log(self, args):
+        """为指定实例安装依赖（异步方式，支持实时日志）
+
+        参数 args:
+          - instance_id: 实例 ID
+        返回: { status, msg, log_file }
+        """
+        import time
+        import subprocess
+        
+        instance_id = (args.get('instance_id') or '').strip()
+        if not instance_id:
+            return {'status': False, 'msg': '实例 ID 不能为空'}
+
+        instances = self.__get_config('sillytavern_instances') or []
+
+        # 查找目标实例
+        target = None
+        for inst in instances:
+            if inst['id'] == instance_id:
+                target = inst
+                break
+
+        if not target:
+            return {'status': False, 'msg': '未找到指定的实例'}
+
+        # 验证路径有效性
+        if not os.path.isdir(target['path']):
+            return {'status': False, 'msg': '实例路径不存在: ' + target['path']}
+
+        try:
+            # 创建日志目录
+            log_dir = os.path.join(stl_path, 'logs')
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir, 0o755)
+
+            # 创建日志文件和锁文件
+            log_file = os.path.join(log_dir, 'npm_install_' + instance_id + '_' + str(int(time.time())) + '.log')
+            lock_file = log_file + '.lock'
+            
+            # 创建锁文件，表示正在安装
+            with open(lock_file, 'w') as f:
+                f.write(str(os.getpid()))
+
+            # 获取网络代理配置
+            proxy_config = self.__get_config('proxy') or {}
+            proxy_mode = proxy_config.get('mode', 'none')
+
+            cmd = 'cd "{}" && npm install'.format(target['path'])
+
+            # 设置代理
+            if proxy_mode == 'custom':
+                host = proxy_config.get('host', '')
+                port = proxy_config.get('port', '')
+                if host and port:
+                    proxy_str = 'http://{}:{}'.format(host, port)
+                    cmd = 'NPM_CONFIG_PROXY={} NPM_CONFIG_HTTPS_PROXY={} {}'.format(proxy_str, proxy_str, cmd)
+            elif proxy_mode == 'system':
+                pass
+
+            # 后台执行 npm install，输出到日志文件
+            with open(log_file, 'w') as f:
+                f.write('[INFO] 开始安装依赖...\n')
+                f.flush()
+                
+                proc = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    cwd=target['path']
+                )
+                proc.wait()
+                
+                if proc.returncode == 0:
+                    f.write('\n[SUCCESS] 依赖安装完成\n')
+                else:
+                    f.write('\n[ERROR] 依赖安装失败，退出码: {}\n'.format(proc.returncode))
+                f.flush()
+
+            # 删除锁文件，表示安装完成
+            if os.path.exists(lock_file):
+                os.remove(lock_file)
+
+            # 检查安装结果
+            node_modules = os.path.join(target['path'], 'node_modules')
+            if os.path.exists(node_modules):
+                return {'status': True, 'msg': '依赖安装成功', 'log_file': log_file}
+            else:
+                return {'status': False, 'msg': '依赖安装完成但 node_modules 未生成', 'log_file': log_file}
+
+        except Exception as e:
+            # 清理锁文件
+            if 'lock_file' in locals() and os.path.exists(lock_file):
+                os.remove(lock_file)
+            return {'status': False, 'msg': '依赖安装失败: ' + str(e)}
+
+    def get_install_deps_log(self, args):
+        """读取依赖安装日志（供前端轮询）
+
+        参数 args:
+          - log_file: 日志文件路径
+          - pos: 上次读取的位置（字节偏移），不传则从头开始
+        """
+        log_file = args.get('log_file', '')
+        if not log_file or not os.path.exists(log_file):
+            return {'status': True, 'log': '', 'pos': 0, 'done': True}
+
+        lock_file = log_file + '.lock'
+        pos = int(args.get('pos') or 0)
+        
+        try:
+            file_size = os.path.getsize(log_file)
+        except Exception:
+            return {'status': True, 'log': '', 'pos': 0, 'done': True}
+
+        if pos >= file_size:
+            done = not os.path.exists(lock_file)
+            return {'status': True, 'log': '', 'pos': pos, 'done': done}
+
+        with open(log_file, 'r') as f:
+            f.seek(pos)
+            new_content = f.read()
+            new_pos = f.tell()
+
+        done = not os.path.exists(lock_file)
+        return {'status': True, 'log': new_content, 'pos': new_pos, 'done': done}
+
     def list_st_instances(self, args):
         """获取所有 SillyTavern 实例列表
 
-        返回: { status, instances: [{ id, path, version, branch, added_at, is_default }] }
+        返回: { status, instances: [{ id, path, version, branch, added_at, is_default, has_deps }] }
         """
         instances = self.__get_config('sillytavern_instances') or []
 
@@ -2945,6 +3105,59 @@ class stl_main:
                                 inst['version'] = match.group(1)
                 except Exception:
                     pass
+                
+                # 检查是否有依赖（node_modules 是否存在）
+                node_modules = os.path.join(inst['path'], 'node_modules')
+                inst['has_deps'] = os.path.exists(node_modules) and os.path.isdir(node_modules)
+                
+                # 检查 node_modules 是否为空
+                node_modules_empty = True
+                if inst['has_deps']:
+                    try:
+                        # 检查目录是否包含任何文件或子目录
+                        if os.listdir(node_modules):
+                            node_modules_empty = False
+                    except Exception:
+                        pass
+                
+                inst['node_modules_empty'] = node_modules_empty
+                
+                # 检查依赖是否完整（对比 package.json 中的依赖）
+                inst['deps_complete'] = True  # 默认认为完整
+                inst['missing_deps_count'] = 0
+                
+                if inst['has_deps'] and not node_modules_empty:
+                    try:
+                        pkg_file = os.path.join(inst['path'], 'package.json')
+                        if os.path.isfile(pkg_file):
+                            content = public.ReadFile(pkg_file)
+                            if content:
+                                import json
+                                pkg_data = json.loads(content)
+                                dependencies = pkg_data.get('dependencies', {})
+                                
+                                # 检查每个依赖是否在 node_modules 中存在
+                                missing_count = 0
+                                for dep_name in dependencies.keys():
+                                    dep_path = os.path.join(node_modules, dep_name)
+                                    if not os.path.exists(dep_path):
+                                        missing_count += 1
+                                
+                                # 如果有缺失的依赖，标记为不完整
+                                inst['deps_complete'] = (missing_count == 0)
+                                inst['missing_deps_count'] = missing_count
+                    except Exception:
+                        # 如果检查失败，默认为完整
+                        pass
+                elif inst['has_deps'] and node_modules_empty:
+                    # node_modules 存在但为空，视为未安装
+                    inst['deps_complete'] = False
+                    inst['missing_deps_count'] = -1  # -1 表示未安装
+                else:
+                    # 没有 node_modules，依赖肯定不完整
+                    inst['deps_complete'] = False
+                    inst['missing_deps_count'] = -1  # -1 表示未安装
+                
                 valid_instances.append(inst)
 
         # 如果实例列表有变化，更新配置
@@ -3196,6 +3409,9 @@ class stl_main:
 
         返回: { status, installed, msg }
         """
+        import time
+        import subprocess
+        
         node_modules = os.path.join(st_path, 'node_modules')
 
         # 如果 node_modules 存在，认为已安装
@@ -3570,13 +3786,27 @@ class stl_main:
         # 如果配置为空或目录不存在，返回默认在线安装路径
         return sillyTavern_path if os.path.isdir(sillyTavern_path) else None
 
+    def get_current_tavern_path(self, args):
+        """API接口：获取当前激活的酒馆路径
+        
+        返回: { status, path }
+        """
+        path = self.get_active_tavern_path()
+        return {'status': True, 'path': path or ''}
+
     def set_tavern_path(self, args):
         """设置酒馆路径（为空则代表使用默认在线安装位置）"""
         path = args.get('path', '')
         # 如果路径是默认路径，也存为空，方便逻辑判断
         if path == sillyTavern_path:
             path = ''
+        
         self.__set_config('sillytavern_path', path)
+        
+        # 如果路径为空，表示切换到在线版本，设置 is_default=true
+        if not path:
+            self.__set_config('is_default', True)
+        
         return {'status': True, 'msg': '设置成功'}
 
     def get_installed_versions_info(self, args):
