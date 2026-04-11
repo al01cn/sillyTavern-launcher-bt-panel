@@ -466,6 +466,91 @@ class stl_main:
 
         return result
 
+    def _update_whitelist_by_mode(self, app_dir, mode):
+        """根据访问模式更新 config.yaml 中的白名单配置
+        
+        策略：
+        - 不直接覆盖用户自定义的白名单
+        - 本地回环地址 (127.0.0.1, ::1) 始终保留，确保本地访问测试正常
+        - 只在切换模式时，添加/移除其他系统预设的IP规则
+        - 保留用户手动添加的自定义IP
+        - 启动时自动修复：如果用户删除了 127.0.0.1 或 ::1，会自动加回来
+        
+        参数:
+          - app_dir: SillyTavern 项目目录
+          - mode: 'wan' (公网) 或 'lan' (局域网)
+        """
+        # 检查 yaml 模块是否可用
+        if not self._yaml_available:
+            public.WriteLog('SillyTavern', '[WARN] PyYAML 未安装，无法更新白名单配置')
+            return
+        
+        import yaml
+        
+        config_file = os.path.join(app_dir, 'config.yaml')
+        if not os.path.exists(config_file):
+            return
+        
+        # 读取现有配置
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f) or {}
+        except Exception as e:
+            public.WriteLog('SillyTavern', '[WARN] 读取 config.yaml 失败: ' + str(e))
+            return
+        
+        # 定义系统预设IP
+        ALWAYS_KEEP_IPS = {'127.0.0.1', '::1'}  # 本地回环，始终保留
+        WAN_EXTRA_IPS = {'0.0.0.0/0', '::/0'}   # 公网模式额外添加
+        LAN_EXTRA_IPS = {'10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'}  # 局域网模式额外添加
+        
+        # 获取当前白名单（如果存在）
+        current_whitelist = set(config.get('whitelist', []))
+        public.WriteLog('SillyTavern', '[DEBUG] 当前白名单: ' + str(sorted(current_whitelist)))
+        
+        # 检查是否需要修复（用户可能删除了 127.0.0.1 或 ::1）
+        missing_protected_ips = ALWAYS_KEEP_IPS - current_whitelist
+        if missing_protected_ips:
+            public.WriteLog('SillyTavern', '[WARN] 检测到受保护IP被删除，正在自动修复: ' + ', '.join(sorted(missing_protected_ips)))
+        
+        # 判断哪些是用户自定义的IP
+        # 用户自定义IP = 当前白名单 - (始终保留的IP + 所有模式预设IP)
+        all_system_ips = ALWAYS_KEEP_IPS | WAN_EXTRA_IPS | LAN_EXTRA_IPS
+        user_custom_ips = current_whitelist - all_system_ips
+        
+        # 构建新的白名单
+        new_whitelist = ALWAYS_KEEP_IPS.copy()  # 始终包含回环地址
+        
+        if mode == 'wan':
+            # 公网模式：回环 + 允许所有IP + 用户自定义
+            new_whitelist |= WAN_EXTRA_IPS
+            log_msg = '[INFO] 已切换为公网模式，白名单: 127.0.0.1, ::1, 0.0.0.0/0, ::/0'
+        else:
+            # 局域网模式：回环 + 私有网络 + 用户自定义
+            new_whitelist |= LAN_EXTRA_IPS
+            log_msg = '[INFO] 已切换为局域网模式，白名单: 127.0.0.1, ::1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16'
+        
+        # 添加用户自定义IP
+        if user_custom_ips:
+            new_whitelist |= user_custom_ips
+            log_msg += '，保留用户自定义IP: ' + ', '.join(sorted(user_custom_ips))
+        
+        # 转换为列表并排序
+        new_whitelist = sorted(list(new_whitelist))
+        public.WriteLog('SillyTavern', '[DEBUG] 新白名单: ' + str(new_whitelist))
+        
+        # 更新配置
+        config['whitelistMode'] = True
+        config['whitelist'] = new_whitelist
+        
+        # 写回文件
+        try:
+            with open(config_file, 'w', encoding='utf-8') as f:
+                yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+            public.WriteLog('SillyTavern', log_msg)
+        except Exception as e:
+            public.WriteLog('SillyTavern', '[ERROR] 写入 config.yaml 失败: ' + str(e))
+
     def _ensure_ecosystem_config(self, app_dir):
         """内部方法：生成/更新 SillyTavern 根目录的 ecosystem.config.cjs
 
@@ -577,6 +662,14 @@ class stl_main:
         install_check = self.is_st_installed({'st_path': app_dir})
         if not install_check.get('installed'):
             return {'status': False, 'msg': 'SillyTavern 未安装，无法启动。请先完成安装。'}
+
+        # 根据访问模式更新 config.yaml 中的白名单配置
+        try:
+            access_mode = self.__get_config('access_mode') or 'wan'
+            self._update_whitelist_by_mode(app_dir, access_mode)
+        except Exception as e:
+            # 配置更新失败不影响启动，只记录日志
+            public.WriteLog('SillyTavern', '[WARN] 更新白名单配置失败: ' + str(e))
 
         # 检查是否已在运行（必须是 online 状态，stopped 状态不算）
         check = public.ExecShell('pm2 jlist')
@@ -1301,6 +1394,21 @@ class stl_main:
             return {'status': False, 'msg': 'key 参数不能为空'}
         try:
             self.__set_config(key, value)
+            
+            # 如果修改的是 access_mode，立即更新酒馆配置的白名单
+            if key == 'access_mode' and value in ['wan', 'lan']:
+                try:
+                    active_path = self.get_active_tavern_path()
+                    public.WriteLog('SillyTavern', '[DEBUG] 切换模式: ' + value + ', 酒馆路径: ' + str(active_path))
+                    if active_path:
+                        self._update_whitelist_by_mode(active_path, value)
+                        public.WriteLog('SillyTavern', '[SUCCESS] 白名单配置已更新')
+                    else:
+                        public.WriteLog('SillyTavern', '[WARN] 未找到活动的酒馆路径，无法更新白名单')
+                except Exception as e:
+                    # 更新失败不影响配置保存，只记录日志
+                    public.WriteLog('SillyTavern', '[ERROR] 更新白名单配置失败: ' + str(e))
+            
             return {'status': True, 'msg': '配置已保存'}
         except Exception as e:
             return {'status': False, 'msg': str(e)}

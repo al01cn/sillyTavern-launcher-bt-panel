@@ -183,12 +183,18 @@ function renderCORSSection(config) {
 
 /**
  * 区块5: 代理与备份
+ * 注意：隐藏酒馆内置代理设置，因为插件已提供代理服务功能
  */
 function renderProxyBackupSection(config) {
     return createConfigSection('proxy-backup', '代理与备份', 'bi-hdd-network', false,
-        createToggleField('启用代理', 'requestProxy.enabled', config.requestProxy.enabled) +
-        createInputField('代理URL', 'requestProxy.url', config.requestProxy.url, 'text') +
-        createDynamicList('绕过代理列表', 'requestProxy.bypass', config.requestProxy.bypass) +
+        // 隐藏酒馆内置代理设置（与插件的代理功能冲突）
+        // createToggleField('启用代理', 'requestProxy.enabled', config.requestProxy.enabled) +
+        // createInputField('代理URL', 'requestProxy.url', config.requestProxy.url, 'text') +
+        // createDynamicList('绕过代理列表', 'requestProxy.bypass', config.requestProxy.bypass) +
+        '<div class="stl-config-notice">' +
+            '<i class="bi bi-info-circle"></i> ' +
+            '<span>酒馆内置代理已禁用，请使用插件的代理管理功能（在“设置”页面配置）</span>' +
+        '</div>' +
         '<hr style="margin: 18px 0; border-top: 1px dashed #ddd;">' +
         createInputField('通用备份数量', 'backups.common.numberOfBackups', config.backups.common.numberOfBackups, 'number', { min: 1 }) +
         createToggleField('聊天备份', 'backups.chat.enabled', config.backups.chat.enabled) +
@@ -408,12 +414,24 @@ function createRangeField(label, key, value, min, max) {
 function createDynamicList(label, key, items) {
     if (!Array.isArray(items)) items = [];
     
+    // 定义受保护的IP（不允许删除）
+    var protectedIPs = {'127.0.0.1': true, '::1': true};
+    
     var itemsHtml = items.map(function(item, index) {
-        return '<div class="stl-list-item" data-index="' + index + '">' +
-            '<input type="text" class="stl-form-control input-sm" value="' + item + '" />' +
+        var isProtected = (key === 'whitelist' && protectedIPs[item]);
+        var deleteButton = isProtected ? 
+            '<span class="stl-protected-badge" title="系统保留IP，不可删除"><i class="bi bi-lock-fill"></i></span>' :
             '<button class="btn btn-danger btn-xs stl-remove-item-btn" data-index="' + index + '">' +
                 '<i class="bi bi-trash"></i>' +
-            '</button>' +
+            '</button>';
+        
+        var inputAttrs = isProtected ? 
+            'type="text" class="stl-form-control input-sm" value="' + item + '" readonly' :
+            'type="text" class="stl-form-control input-sm" value="' + item + '"';
+        
+        return '<div class="stl-list-item" data-index="' + index + '"' + (isProtected ? ' data-protected="true"' : '') + '>' +
+            '<input ' + inputAttrs + ' />' +
+            deleteButton +
         '</div>';
     }).join('');
     
@@ -440,12 +458,25 @@ function rerenderDynamicList(key) {
     if ($listContainer.length === 0) return;
     
     var items = TavernConfig.getConfig(key) || [];
+    
+    // 定义受保护的IP（不允许删除）
+    var protectedIPs = {'127.0.0.1': true, '::1': true};
+    
     var itemsHtml = items.map(function(item, index) {
-        return '<div class="stl-list-item" data-index="' + index + '">' +
-            '<input type="text" class="stl-form-control input-sm" value="' + item + '" />' +
+        var isProtected = (key === 'whitelist' && protectedIPs[item]);
+        var deleteButton = isProtected ? 
+            '<span class="stl-protected-badge" title="系统保留IP，不可删除"><i class="bi bi-lock-fill"></i></span>' :
             '<button class="btn btn-danger btn-xs stl-remove-item-btn" data-index="' + index + '">' +
                 '<i class="bi bi-trash"></i>' +
-            '</button>' +
+            '</button>';
+        
+        var inputAttrs = isProtected ? 
+            'type="text" class="stl-form-control input-sm" value="' + item + '" readonly' :
+            'type="text" class="stl-form-control input-sm" value="' + item + '"';
+        
+        return '<div class="stl-list-item" data-index="' + index + '"' + (isProtected ? ' data-protected="true"' : '') + '>' +
+            '<input ' + inputAttrs + ' />' +
+            deleteButton +
         '</div>';
     }).join('');
     
@@ -492,6 +523,13 @@ function bindTavernEvents() {
         var $list = $item.closest('.stl-dynamic-list');
         var key = $list.data('config-key');
         var index = parseInt($(this).data('index'));
+        
+        // 检查是否是受保护的IP
+        if ($item.data('protected') === 'true') {
+            layer.msg('此IP为系统保留IP，不可删除', { icon: 2 });
+            return;
+        }
+        
         TavernConfig.removeListItem(key, index);
         // 重新渲染该列表
         setTimeout(function() {
@@ -552,14 +590,13 @@ function updateConditionalFields() {
     var userAccountsEnabled = TavernConfig.getConfig('enableUserAccounts');
     toggleFieldVisibility('enableDiscreetLogin', userAccountsEnabled);
     
-    // 白名单相关
+    // 白名单相关 - IP白名单始终显示（因为系统会自动管理）
     var whitelistEnabled = TavernConfig.getConfig('whitelistMode');
     toggleFieldVisibility('whitelist', whitelistEnabled);
     
-    // 主机白名单相关
-    var hostWhitelistEnabled = TavernConfig.getConfig('hostWhitelist.enabled');
-    toggleFieldVisibility('hostWhitelist.scan', hostWhitelistEnabled);
-    toggleFieldVisibility('hostWhitelist.hosts', hostWhitelistEnabled);
+    // 主机白名单相关 - 始终显示，不依赖开关状态
+    // toggleFieldVisibility('hostWhitelist.scan', hostWhitelistEnabled);  // 删除这行
+    // toggleFieldVisibility('hostWhitelist.hosts', hostWhitelistEnabled);  // 删除这行
     
     // CORS相关
     var corsEnabled = TavernConfig.getConfig('cors.enabled');
@@ -570,10 +607,10 @@ function updateConditionalFields() {
     toggleFieldVisibility('cors.credentials', corsEnabled);
     toggleFieldVisibility('cors.maxAge', corsEnabled);
     
-    // 代理相关
-    var proxyEnabled = TavernConfig.getConfig('requestProxy.enabled');
-    toggleFieldVisibility('requestProxy.url', proxyEnabled);
-    toggleFieldVisibility('requestProxy.bypass', proxyEnabled);
+    // 代理相关 - 已隐藏，不需要条件显示
+    // var proxyEnabled = TavernConfig.getConfig('requestProxy.enabled');
+    // toggleFieldVisibility('requestProxy.url', proxyEnabled);
+    // toggleFieldVisibility('requestProxy.bypass', proxyEnabled);
     
     // 聊天备份相关
     var chatBackupEnabled = TavernConfig.getConfig('backups.chat.enabled');

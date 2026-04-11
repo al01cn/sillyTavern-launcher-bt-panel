@@ -148,7 +148,30 @@ function switchMode(mode) {
     // 保存选择到 localStorage
     localStorage.setItem('stl_access_mode', mode);
     
-    layer.msg('已切换至 ' + (mode === 'lan' ? '局域网' : '公网') + '模式', { icon: 1 });
+    // 调用后端更新配置
+    request_plugin('set_config', { key: 'access_mode', value: mode }, function(rdata) {
+        if (rdata && rdata.status) {
+            layer.msg('已切换至 ' + (mode === 'lan' ? '局域网' : '公网') + '模式', { icon: 1, time: 1500 });
+            
+            // 如果当前在酒馆配置页面，提示用户刷新
+            if (typeof TavernConfig !== 'undefined' && $('#page-tavern').length > 0 && $('#page-tavern').hasClass('active')) {
+                layer.confirm('访问模式已更改，是否立即刷新配置以查看更新后的白名单？', {
+                    btn: ['立即刷新', '稍后'],
+                    icon: 3,
+                    title: '提示'
+                }, function(idx) {
+                    TavernConfig.loadConfig(function(success) {
+                        if (success) {
+                            layer.msg('配置已刷新', { icon: 1 });
+                        }
+                    });
+                    layer.close(idx);
+                });
+            }
+        } else {
+            layer.msg('模式切换失败', { icon: 2 });
+        }
+    });
 }
 
 /**
