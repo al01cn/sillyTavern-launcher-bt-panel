@@ -1,7 +1,7 @@
-
 // GitHub URL 拦截器 - 自动重写 GitHub 链接到镜像
-import https from 'https';
-import http from 'http';
+// 适用于 Node.js >= v20，通过 require() 加载
+const https = require('https');
+const http = require('http');
 const originalHttpsRequest = https.request;
 const originalHttpsGet = https.get;
 const originalHttpRequest = http.request;

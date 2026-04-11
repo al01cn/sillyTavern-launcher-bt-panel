@@ -21,6 +21,11 @@ var NetworkModal = (function () {
     var _ipv6 = '';
     var _proxyUrl = '';
     var _interfaces = [];
+    var _hasProxy = false;  // 是否开启反向代理
+    var _testResult = null;  // 缓存测试结果 { timestamp, accessible, message }
+    var _lastServiceStart = null;  // 上次服务启动时间
+    var _ipv4Accessible = null;  // IPv4 可访问性 (true/false/null)
+    var _ipv6Accessible = null;  // IPv6 可访问性 (true/false/null)
 
     // ======== 弹窗 HTML ========
 
@@ -53,6 +58,18 @@ var NetworkModal = (function () {
             '<div class="stl-nm-loading" id="nm-loading">' +
                 '<div class="stl-nm-spinner"></div>' +
                 '<span>正在获取网络地址...</span>' +
+            '</div>' +
+
+            // 访问受阻警告
+            '<div class="stl-nm-warning" id="nm-warning" style="display:none;">' +
+                '<i class="bi bi-exclamation-triangle-fill"></i> ' +
+                '<span id="nm-warning-text"></span>' +
+            '</div>' +
+
+            // 测试中提示
+            '<div class="stl-nm-testing" id="nm-testing" style="display:none;">' +
+                '<div class="stl-nm-spinner stl-nm-spinner-sm"></div>' +
+                '<span>正在进行访问测试...</span>' +
             '</div>' +
 
             // 地址卡片区域（动态渲染）
@@ -113,6 +130,200 @@ var NetworkModal = (function () {
         if (!text) return '';
         var map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
         return text.replace(/[&<>"']/g, function (m) { return map[m]; });
+    }
+
+    /**
+     * 测试端口是否可访问（使用 Image 对象）
+     * 
+     * 判断标准：
+     * - onload/onerror 触发 = 能连接上 = 可访问（无论返回什么状态码）
+     * - 超时 = 无法连接 = 受阻（类似 curl timeout）
+     * 
+     * @param {string} url - 要测试的 URL
+     * @param {function} callback - 回调函数 (accessible: boolean)
+     */
+    function _testPortAccess(url, callback) {
+        // 设置超时时间 3 秒
+        var timeout = 3000;
+        var img = new Image();
+        var timer = null;
+        var called = false;
+        
+        function done(success) {
+            if (called) return;  // 防止重复调用
+            called = true;
+            clearTimeout(timer);
+            callback(success);
+        }
+        
+        // 加载成功（服务器返回了内容）
+        img.onload = function() {
+            done(true);  // ✅ 可访问
+        };
+        
+        // 加载失败（但连接已建立，可能是跨域、404、500等）
+        img.onerror = function() {
+            // 只要能触发事件，说明 TCP 连接成功
+            // 即使返回 404/500 或跨域错误，也认为端口是可访问的
+            done(true);  // ✅ 可访问
+        };
+        
+        // 超时（类似 curl timeout，无法建立连接）
+        timer = setTimeout(function() {
+            done(false);  // ❌ 受阻
+        }, timeout);
+        
+        // 开始加载（添加随机参数避免缓存）
+        img.src = url + '/favicon.ico?' + Date.now();
+    }
+
+    /**
+     * 显示警告信息
+     */
+    function _showWarning(message) {
+        $('#nm-warning-text').text(message);
+        $('#nm-warning').show();
+    }
+
+    /**
+     * 隐藏警告信息
+     */
+    function _hideWarning() {
+        $('#nm-warning').hide();
+    }
+
+    /**
+     * 显示测试中状态
+     */
+    function _showTesting() {
+        $('#nm-testing').show();
+    }
+
+    /**
+     * 隐藏测试中状态
+     */
+    function _hideTesting() {
+        $('#nm-testing').hide();
+    }
+
+    /**
+     * 检查是否需要重新测试（服务是否重启）
+     */
+    function _needRetest() {
+        // 如果没有缓存结果，需要测试
+        if (!_testResult) return true;
+        
+        // 如果服务重启了，需要重新测试
+        var currentStart = window.ConsolePage && window.ConsolePage.getServiceStartTime ? 
+            window.ConsolePage.getServiceStartTime() : null;
+        
+        if (currentStart && currentStart !== _lastServiceStart) {
+            return true;
+        }
+        
+        // 否则使用缓存
+        return false;
+    }
+
+    /**
+     * 异步测试访问（带缓存）
+     * @param {string} mode - 'proxy' 或 'public'
+     * @param {string|array} testTarget - 测试目标（URL 或 URL 数组）
+     */
+    function _asyncTestAccess(mode, testTarget) {
+        // 检查是否需要重新测试
+        if (!_needRetest()) {
+            // 使用缓存结果
+            if (_testResult && !_testResult.accessible) {
+                _showWarning(_testResult.message);
+            } else {
+                _hideWarning();
+            }
+            return;
+        }
+        
+        // 显示测试中状态
+        _showTesting();
+        
+        // 延迟执行，让 UI 先渲染
+        setTimeout(function() {
+            if (mode === 'proxy') {
+                // 反向代理模式：测试单个 URL
+                _testPortAccess(testTarget, function (accessible) {
+                    _hideTesting();
+                    _testResult = {
+                        timestamp: Date.now(),
+                        accessible: accessible,
+                        message: accessible ? '' : '反向代理访问受阻，请检查安全组是否开放 80 和 443 端口'
+                    };
+                    _lastServiceStart = window.ConsolePage && window.ConsolePage.getServiceStartTime ? 
+                        window.ConsolePage.getServiceStartTime() : null;
+                    
+                    if (!accessible) {
+                        _showWarning(_testResult.message);
+                    }
+                });
+            } else {
+                // 公网 IP 模式：测试多个 URL
+                var testUrls = testTarget;
+                var testedCount = 0;
+                
+                // 重置可访问性状态
+                _ipv4Accessible = null;
+                _ipv6Accessible = null;
+                
+                testUrls.forEach(function(item) {
+                    _testPortAccess(item.url, function (accessible) {
+                        // 记录每个 IP 的可访问性
+                        if (item.type === 'ipv4') {
+                            _ipv4Accessible = accessible;
+                        } else if (item.type === 'ipv6') {
+                            _ipv6Accessible = accessible;
+                        }
+                        
+                        testedCount++;
+                        
+                        // 所有地址都测试完了
+                        if (testedCount === testUrls.length) {
+                            _hideTesting();
+                            
+                            // 根据测试结果生成消息
+                            var allBlocked = true;
+                            var message = '';
+                            
+                            if (_ipv4Accessible === false && _ipv6Accessible === false) {
+                                // 两者都受阻
+                                message = 'IPV4 与 IPV6 访问受阻，如果是云服务请到对应安全组开放端口';
+                            } else if (_ipv4Accessible === false) {
+                                // 仅 IPv4 受阻
+                                message = 'IPV4 访问受阻，如果是云服务请到对应安全组开放端口';
+                            } else if (_ipv6Accessible === false) {
+                                // 仅 IPv6 受阻
+                                message = 'IPV6 访问受阻，如果是云服务请到对应安全组开放端口';
+                            } else {
+                                // 至少有一个可访问
+                                allBlocked = false;
+                            }
+                            
+                            _testResult = {
+                                timestamp: Date.now(),
+                                accessible: !allBlocked,
+                                message: message
+                            };
+                            _lastServiceStart = window.ConsolePage && window.ConsolePage.getServiceStartTime ? 
+                                window.ConsolePage.getServiceStartTime() : null;
+                            
+                            if (allBlocked) {
+                                _showWarning(message);
+                            }
+                            
+                            // 重新渲染卡片，根据测试结果更新显示
+                            _doRender(_ipv4, _ipv6);
+                        }
+                    });
+                });
+            }
+        }, 100);
     }
 
     // ======== 数据获取 ========
@@ -239,9 +450,9 @@ var NetworkModal = (function () {
      * 统一入口：拿到代理信息后决定要不要再异步拿域名
      */
     function _renderCards(proxyInfo, ipv4, ipv6, interfaces) {
-        var hasProxy = proxyInfo && proxyInfo.status && proxyInfo.exists;
+        _hasProxy = proxyInfo && proxyInfo.status && proxyInfo.exists;
 
-        if (hasProxy) {
+        if (_hasProxy) {
             // 再异步拿域名列表
             Nginx.getDomainList(function (domData) {
                 var domain = '';
@@ -252,10 +463,23 @@ var NetworkModal = (function () {
                 }
                 _proxyUrl = domain ? (protocol + '://' + domain) : '';
                 _doRender(ipv4, ipv6);
+                
+                // 异步测试（带缓存）
+                if (_proxyUrl) {
+                    _asyncTestAccess('proxy', _proxyUrl);
+                }
             });
         } else {
             _proxyUrl = '';
             _doRender(ipv4, ipv6);
+            
+            // 异步测试（带缓存）
+            if (ipv4 || ipv6) {
+                var testUrls = [];
+                if (ipv4) testUrls.push({ type: 'ipv4', url: _buildUrl(ipv4) });
+                if (ipv6) testUrls.push({ type: 'ipv6', url: _buildUrl(ipv6) });
+                _asyncTestAccess('public', testUrls);
+            }
         }
     }
 
@@ -263,9 +487,8 @@ var NetworkModal = (function () {
      * 实际渲染：根据 _ipv4 / _ipv6 / _proxyUrl 动态生成卡片
      *
      * 布局规则：
-     * - 有域名 + 有 IPv6 → [域名] [IPv6]（域名优先，占左位）
-     * - 有域名 + 无 IPv6 → [IPv4] [域名]（IPv6 位置被域名替代）
-     * - 无域名 → [IPv4] [IPv6]（不可用灰显）
+     * - 有反向代理 → 只显示域名卡片
+     * - 无反向代理 → 根据可访问性显示 IPv4/IPv6
      */
     function _doRender(ipv4, ipv6) {
         _ipv4 = ipv4;
@@ -273,19 +496,30 @@ var NetworkModal = (function () {
 
         var cards = [];
 
-        if (_proxyUrl) {
-            // 有域名
-            if (ipv6) {
-                cards.push(_makeProxyCard(_proxyUrl));
-                cards.push(_makeIpCard('IPv6', ipv6, 'v6'));
-            } else {
-                if (ipv4) cards.push(_makeIpCard('IPv4', ipv4, 'v4'));
-                cards.push(_makeProxyCard(_proxyUrl));
-            }
+        if (_hasProxy && _proxyUrl) {
+            // 有反向代理：只显示域名卡片
+            cards.push(_makeProxyCard(_proxyUrl));
         } else {
-            // 无域名：始终显示 IPv4 + IPv6
-            cards.push(ipv4 ? _makeIpCard('IPv4', ipv4, 'v4') : _makeEmptyCard('IPv4'));
-            cards.push(ipv6 ? _makeIpCard('IPv6', ipv6, 'v6') : _makeEmptyCard('IPv6'));
+            // 无反向代理：根据可访问性显示
+            // 如果还没有测试结果，默认都显示
+            var showIpv4 = !_testResult || _ipv4Accessible !== false;
+            var showIpv6 = !_testResult || _ipv6Accessible !== false;
+            
+            // 如果两个都有且都可访问，都显示
+            // 如果只有一个可访问，只显示那个
+            // 如果都不可访问，还是都显示（让用户知道有这个选项）
+            if (ipv4 && showIpv4) {
+                cards.push(_makeIpCard('IPv4', ipv4, 'v4'));
+            }
+            if (ipv6 && showIpv6) {
+                cards.push(_makeIpCard('IPv6', ipv6, 'v6'));
+            }
+            
+            // 如果都没有显示（理论上不应该发生），至少显示一个
+            if (cards.length === 0) {
+                if (ipv4) cards.push(_makeIpCard('IPv4', ipv4, 'v4'));
+                else if (ipv6) cards.push(_makeIpCard('IPv6', ipv6, 'v6'));
+            }
         }
 
         $('#nm-cards').html(cards.join(''));
@@ -407,6 +641,12 @@ var NetworkModal = (function () {
                 _ipv6 = '';
                 _proxyUrl = '';
                 _interfaces = [];
+                _hasProxy = false;
+                _ipv4Accessible = null;
+                _ipv6Accessible = null;
+                _hideWarning();
+                _hideTesting();
+                // 不清除 _testResult 和 _lastServiceStart，保持缓存
             }
         });
     }
@@ -419,6 +659,7 @@ var NetworkModal = (function () {
     }
 
     function refresh() {
+        _hideWarning();
         _fetchData();
     }
 

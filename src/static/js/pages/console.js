@@ -19,6 +19,8 @@ var ConsolePage = (function() {
     var _eventsRegistered = false;
     var _refreshInProgress = false;
     var _portConflictHandled = false;
+    var _serviceStartTime = null;  // 服务启动时间戳
+    var _currentStartupData = null;  // 当前启动数据（用于刷新时重新显示）
 
     // ============ UI 状态 ============
     var _autoScroll = true;
@@ -62,19 +64,8 @@ var ConsolePage = (function() {
      * 渲染控制台页面
      */
     function renderConsolePage() {
-        var $output = $('#console-output');
-        var totalLines = $output.length > 0 ? $output.find('.log-line').length : 0;
-        var hasRealContent = totalLines > 1 || (totalLines === 1 && !$output.text().includes('等待启动服务'));
-
         _consolePageActive = true;
         _portConflictHandled = false;
-
-        if (hasRealContent) {
-            _bindEvents();
-            _loadLogPath();
-            _checkServiceStatus();
-            return;
-        }
 
         var html =
             '<div class="stl-page active" id="page-console">' +
@@ -125,15 +116,76 @@ var ConsolePage = (function() {
         _bindEvents();
         _loadLogPath();
 
-        $('#console-output').html(
-            '<div class="log-line">' +
-                '<span class="log-time">' + getCurrentTime() + '</span>' +
-                '<span class="log-type log-type-system">SYSTEM</span>' +
-                '<span class="log-content">等待启动服务...</span>' +
-            '</div>'
-        );
-
-        _checkServiceStatus();
+        // 检查是否有待处理的启动数据
+        if (window._pendingEnvData) {
+            var envData = window._pendingEnvData;
+            var githubLogs = window._pendingGithubLogs;
+            
+            // 保存到 _currentStartupData，用于刷新时重新显示
+            _currentStartupData = {
+                envData: envData,
+                githubLogs: githubLogs
+            };
+            
+            // 清除 pending 数据
+            window._pendingEnvData = null;
+            window._pendingGithubLogs = null;
+            
+            // 添加启动日志
+            addLog('SYSTEM', '开始启动 SillyTavern...');
+            addLog('INFO', '[准备工作] 检测酒馆安装状态...');
+            if (envData.tavern_version) addLog('INFO', '酒馆版本: ' + envData.tavern_version);
+            if (envData.node_version) addLog('INFO', 'Node.js 版本: ' + envData.node_version);
+            if (envData.git_version) addLog('INFO', 'Git 版本: ' + envData.git_version);
+            if (envData.pm2_version) addLog('INFO', 'PM2 版本: ' + envData.pm2_version);
+            addLog('SYSTEM', '[启动] 使用 PM2 启动 SillyTavern...');
+            
+            // 显示 GitHub 加速日志
+            if (githubLogs && Array.isArray(githubLogs) && githubLogs.length > 0) {
+                githubLogs.forEach(function(log) {
+                    addLog('INFO', log);
+                });
+            }
+            
+            // 显示按钮
+            $('#console-btn-stop').show().prop('disabled', false);
+            $('#console-btn-force-stop').show().prop('disabled', false);
+            $('#console-btn-start').hide();
+            $('#console-btn-visit').show();
+            
+            // 启动轮询
+            _startPolling();
+        } else {
+            // 没有待处理数据，检查服务状态
+            request_plugin('pm2_status', {}, function(rdata) {
+                if (rdata && rdata.status && rdata.running) {
+                    // 服务正在运行，直接加载日志
+                    _fetchLogsOnce(function() {
+                        _startPolling();
+                    });
+                    
+                    // 显示按钮
+                    $('#console-btn-stop').show().prop('disabled', false);
+                    $('#console-btn-force-stop').show().prop('disabled', false);
+                    $('#console-btn-start').hide();
+                    $('#console-btn-visit').show();
+                } else {
+                    // 服务未运行，显示默认提示
+                    $('#console-output').html(
+                        '<div class="log-line">' +
+                            '<span class="log-time">' + getCurrentTime() + '</span>' +
+                            '<span class="log-type log-type-system">SYSTEM</span>' +
+                            '<span class="log-content">等待启动服务...</span>' +
+                        '</div>'
+                    );
+                    
+                    $('#console-btn-stop').hide();
+                    $('#console-btn-force-stop').hide();
+                    $('#console-btn-start').show().prop('disabled', false).removeClass('btn-disabled');
+                    $('#console-btn-visit').hide();
+                }
+            });
+        }
     }
 
     function _bindEvents() {
@@ -192,10 +244,7 @@ var ConsolePage = (function() {
                     $('#console-btn-start').hide();
                     $('#console-btn-visit').show();
                     _serviceRunning = true;
-                    // 服务在跑 → 立即刷新日志 + 启动轮询
-                    _fetchLogsOnce(function() {
-                        _startPolling();
-                    });
+                    // 不在这里调用 _fetchLogsOnce，由页面显示事件统一处理
                 } else if (rdata && rdata.status) {
                     $('#console-btn-stop').hide();
                     $('#console-btn-force-stop').hide();
@@ -253,7 +302,7 @@ var ConsolePage = (function() {
 
         request_plugin('pm2_logs', { type: 'out', reset: '1' }, function(rdata) {
             if (rdata.status) {
-                $('#console-output').empty();
+                // 不清空现有日志，直接追加 PM2 日志
                 _appendLogLine(getCurrentTime(), 'SYSTEM', '--- PM2日志开始 ---');
                 if (rdata.lines && rdata.lines.length > 0) {
                     _detectGoToUrl(rdata.lines);
@@ -397,8 +446,34 @@ var ConsolePage = (function() {
 
         request_plugin('pm2_logs', { type: 'out', reset: '1' }, function(rdata) {
             if (rdata.status) {
+                // 清空旧日志
                 $('#console-output').empty();
+                
+                // 重新显示启动日志（如果有当前启动数据）
+                if (_currentStartupData && _currentStartupData.envData) {
+                    var envData = _currentStartupData.envData;
+                    var githubLogs = _currentStartupData.githubLogs;
+                    
+                    addLog('SYSTEM', '开始启动 SillyTavern...');
+                    addLog('INFO', '[准备工作] 检测酒馆安装状态...');
+                    if (envData.tavern_version) addLog('INFO', '酒馆版本: ' + envData.tavern_version);
+                    if (envData.node_version) addLog('INFO', 'Node.js 版本: ' + envData.node_version);
+                    if (envData.git_version) addLog('INFO', 'Git 版本: ' + envData.git_version);
+                    if (envData.pm2_version) addLog('INFO', 'PM2 版本: ' + envData.pm2_version);
+                    addLog('SYSTEM', '[启动] 使用 PM2 启动 SillyTavern...');
+                    
+                    // 显示 GitHub 加速日志
+                    if (githubLogs && Array.isArray(githubLogs) && githubLogs.length > 0) {
+                        githubLogs.forEach(function(log) {
+                            addLog('INFO', log);
+                        });
+                    }
+                }
+                
+                // 添加 PM2 日志标记
                 _appendLogLine(getCurrentTime(), 'SYSTEM', '--- PM2日志开始 ---（已刷新）');
+                
+                // 追加 PM2 日志
                 if (rdata.lines && rdata.lines.length > 0) {
                     _detectGoToUrl(rdata.lines);
                     _appendLines('out', rdata.lines);
@@ -505,36 +580,59 @@ var ConsolePage = (function() {
 
     /**
      * 服务启动回调
+     * 注意：不直接操作 DOM，因为 showPage('console') 会重建 DOM，导致日志丢失
+     * 所有数据保存到 _pendingEnvData，由 renderConsolePage 统一处理
      */
-    function onServiceStart(envData) {
+    function onServiceStart(envData, githubLogs) {
         _serviceRunning = true;
         _portConflictHandled = false;
+        _serviceStartTime = Date.now();  // 记录服务启动时间
 
-        var $output = $('#console-output');
-        if ($output.length === 0) return;
-
-        $output.empty();
-        request_plugin('pm2_logs', { type: 'out', reset: '1' }, function() {});
-        request_plugin('pm2_logs', { type: 'err', reset: '1' }, function() {});
-
-        addLog('SYSTEM', '开始启动 SillyTavern...');
-        addLog('INFO', '[准备工作] 检测酒馆安装状态...');
-
-        if (envData.tavern_version) addLog('INFO', '酒馆版本: ' + envData.tavern_version);
-        if (envData.node_version) addLog('INFO', 'Node.js 版本: ' + envData.node_version);
-        if (envData.git_version) addLog('INFO', 'Git 版本: ' + envData.git_version);
-        if (envData.pm2_version) addLog('INFO', 'PM2 版本: ' + envData.pm2_version);
-
-        addLog('SYSTEM', '[启动] 使用 PM2 启动 SillyTavern...');
-        addLog('SYSTEM', '--- PM2日志开始 ---');
-
-        $('#console-btn-stop').show().prop('disabled', false);
-        $('#console-btn-force-stop').show().prop('disabled', false);
-        $('#console-btn-start').hide();
-        $('#console-btn-visit').show();
-
-        // 启动服务 → 立即启动轮询
-        _startPolling();
+        // 总是保存到 pending 数据，不操作 DOM
+        // 因为 showPage('console') 会重建 DOM，导致日志丢失
+        window._pendingEnvData = envData;
+        window._pendingGithubLogs = githubLogs;
+        
+        // 如果当前已经在控制台页面，立即显示日志
+        if (_consolePageActive && $('#console-output').length > 0) {
+            // 清空旧日志
+            $('#console-output').empty();
+            
+            // 重置 PM2 日志位置
+            request_plugin('pm2_logs', { type: 'out', reset: '1' }, function() {});
+            request_plugin('pm2_logs', { type: 'err', reset: '1' }, function() {});
+            
+            // 保存启动数据到 _currentStartupData，用于刷新时重新显示
+            _currentStartupData = {
+                envData: envData,
+                githubLogs: githubLogs
+            };
+            
+            // 添加启动日志
+            addLog('SYSTEM', '开始启动 SillyTavern...');
+            addLog('INFO', '[准备工作] 检测酒馆安装状态...');
+            if (envData.tavern_version) addLog('INFO', '酒馆版本: ' + envData.tavern_version);
+            if (envData.node_version) addLog('INFO', 'Node.js 版本: ' + envData.node_version);
+            if (envData.git_version) addLog('INFO', 'Git 版本: ' + envData.git_version);
+            if (envData.pm2_version) addLog('INFO', 'PM2 版本: ' + envData.pm2_version);
+            addLog('SYSTEM', '[启动] 使用 PM2 启动 SillyTavern...');
+            
+            // 显示 GitHub 加速日志
+            if (githubLogs && Array.isArray(githubLogs) && githubLogs.length > 0) {
+                githubLogs.forEach(function(log) {
+                    addLog('INFO', log);
+                });
+            }
+            
+            // 显示按钮
+            $('#console-btn-stop').show().prop('disabled', false);
+            $('#console-btn-force-stop').show().prop('disabled', false);
+            $('#console-btn-start').hide();
+            $('#console-btn-visit').show();
+            
+            // 启动轮询
+            _startPolling();
+        }
     }
 
     /**
@@ -543,6 +641,9 @@ var ConsolePage = (function() {
     function onServiceStop() {
         _serviceRunning = false;
         _stopPolling();
+        
+        // 清空启动数据（服务已停止）
+        _currentStartupData = null;
 
         addLog('SYSTEM', '--- PM2日志结束 ---');
         addLog('SYSTEM', 'SillyTavern 已停止');
@@ -589,7 +690,8 @@ var ConsolePage = (function() {
         refreshLogs: refreshLogs,
         addLog: addLog,
         clearLogs: clearLogs,
-        openLogFolder: openLogFolder
+        openLogFolder: openLogFolder,
+        getServiceStartTime: function() { return _serviceStartTime; }  // 获取服务启动时间
     };
 })();
 

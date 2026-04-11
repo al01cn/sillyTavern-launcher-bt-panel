@@ -286,9 +286,9 @@ function startService() {
                 $('#service-status').text('运行中').removeClass('stl-status-stopped').addClass('stl-status-started');
                 $('#btn-visit-home').show();
                 
-                // 先通知控制台页面（在跳转之前）
+                // 先通知控制台页面（在跳转之前），传递 GitHub 加速日志
                 if (window.ConsolePage && typeof window.ConsolePage.onServiceStart === 'function') {
-                    window.ConsolePage.onServiceStart(envData);
+                    window.ConsolePage.onServiceStart(envData, rdata.github_logs);
                 }
                 
                 // 然后跳转到控制台页面
@@ -320,6 +320,19 @@ function stopService() {
             $('#btn-start').show();
             $('#service-status').text('已停止').removeClass('stl-status-started').addClass('stl-status-stopped');
             $('#btn-visit-home').hide();
+            
+            // 检查酒馆是否已安装，决定是否启用启动按钮
+            request_plugin('get_startup_info', {}, function(startupData) {
+                if (!startupData) startupData = {};
+                var tavernInstalled = startupData && startupData.status && startupData.tavern_installed;
+                
+                if (tavernInstalled) {
+                    $('#btn-start').prop('disabled', false).removeClass('btn-disabled');
+                } else {
+                    $('#btn-start').prop('disabled', true).addClass('btn-disabled');
+                }
+            });
+            
             layer.msg('服务已停止', { icon: 1 });
         } else {
             $('#btn-stop').html('<i class="bi bi-stop-fill"></i><span>停止服务</span>').prop('disabled', false);

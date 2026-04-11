@@ -493,6 +493,18 @@ class stl_main:
         # config.yaml 路径
         config_path = os.path.join(app_dir, 'config.yaml').replace('\\', '/')
 
+        # 检查是否有 GitHub 拦截器文件
+        interceptor_file = os.path.join(app_dir, 'github-proxy-interceptor.js')
+        has_interceptor = os.path.exists(interceptor_file)
+        
+        # 构建 args
+        base_args = '--configPath ' + config_path
+        if has_interceptor:
+            # 添加 --import 参数加载拦截器
+            args_value = base_args + ' --import ./github-proxy-interceptor.js'
+        else:
+            args_value = base_args
+
         # 拼接 CJS 内容
         env_block = f"""      NODE_ENV: 'production',
 {proxy_section}""" if proxy_env else "      NODE_ENV: 'production'"
@@ -501,7 +513,7 @@ class stl_main:
   apps: [{{
     name: '{self.PM2_APP_NAME}',
     script: './server.js',
-    args: '--configPath {config_path}',
+    args: '{args_value}',
     cwd: __dirname,
     interpreter: 'none',
     env: {{
@@ -582,11 +594,47 @@ class stl_main:
         except Exception:
             pass
 
+        # 启动前设置 GitHub 加速（根据 Node.js 版本决定方式）
+        github_accelerate_logs = []
+        try:
+            accelerate_result = self.setup_github_accelerate_for_instance({
+                'instance_path': app_dir
+            })
+            if accelerate_result['status'] and accelerate_result.get('method') != 'none':
+                method = accelerate_result.get('method', 'unknown')
+                if method == 'interceptor':
+                    log_msg = '[SUCCESS] GitHub URL 拦截器已生成'
+                    public.WriteLog('SillyTavern', log_msg)
+                    github_accelerate_logs.append(log_msg)
+                    
+                    log_msg = '[INFO] 拦截器文件: ' + accelerate_result.get('file', '')
+                    public.WriteLog('SillyTavern', log_msg)
+                    github_accelerate_logs.append(log_msg)
+                    
+                    log_msg = '[SUCCESS] GitHub URL 拦截器已激活 (将在 PM2 配置中加载)'
+                    public.WriteLog('SillyTavern', log_msg)
+                    github_accelerate_logs.append(log_msg)
+                elif method == 'git_proxy':
+                    log_msg = '[SUCCESS] Git 全局代理已设置'
+                    public.WriteLog('SillyTavern', log_msg)
+                    github_accelerate_logs.append(log_msg)
+                    
+                    log_msg = '[INFO] 代理地址: ' + accelerate_result.get('url', '')
+                    public.WriteLog('SillyTavern', log_msg)
+                    github_accelerate_logs.append(log_msg)
+        except Exception as e:
+            log_msg = '[WARN] 设置 GitHub 加速失败: ' + str(e)
+            public.WriteLog('SillyTavern', log_msg)
+            github_accelerate_logs.append(log_msg)
+
         # 确保有 ecosystem.config.cjs
         ecosystem_file = self._ensure_ecosystem_config(app_dir)
 
         # 清空旧日志
         public.ExecShell('pm2 flush ' + self.PM2_APP_NAME)
+        
+        # 重置后端日志位置缓存，确保下次读取从最新位置开始
+        self._log_positions.clear()
 
         # 进程已存在（但停止了）→ restart；不存在 → start
         if pm2_exists:
@@ -598,13 +646,26 @@ class stl_main:
         err = (result[1] or '').strip()
         if err and 'Error' in err:
             return {'status': False, 'msg': '启动失败: ' + err}
-        return {'status': True, 'msg': 'SillyTavern 已启动'}
+        
+        # 返回 GitHub 加速日志，供前端显示
+        return {
+            'status': True,
+            'msg': 'SillyTavern 已启动',
+            'github_logs': github_accelerate_logs if github_accelerate_logs else None
+        }
 
     def pm2_stop(self, args):
         """停止 PM2 管理的 SillyTavern 进程（pm2 stop）
 
         返回: { status, msg }
         """
+        # 停止前清理 GitHub 加速设置（仅清理 Git 全局配置）
+        try:
+            self._cleanup_git_proxy_on_stop()
+        except Exception as e:
+            # 清理失败不影响停止操作
+            pass
+        
         cmd = 'pm2 stop ' + self.PM2_APP_NAME
         result = public.ExecShell(cmd)
         out = (result[0] or '').strip()
@@ -633,6 +694,12 @@ class stl_main:
         install_check = self.is_st_installed({'st_path': app_dir})
         if not install_check.get('installed'):
             return {'status': False, 'msg': 'SillyTavern 未安装，无法重启。请先完成安装。'}
+
+        # 重启前清理旧的 GitHub 加速设置
+        try:
+            self._cleanup_git_proxy_on_stop()
+        except Exception as e:
+            pass
 
         # 重新生成 ecosystem 配置（覆盖旧文件，确保最新代理设置生效）
         ecosystem_file = self._ensure_ecosystem_config(app_dir)
@@ -2235,6 +2302,266 @@ class stl_main:
             'enabled': enabled,
             'url': url or 'https://ghfast.top/'
         }
+
+    def setup_github_accelerate_for_instance(self, args):
+        """为指定酒馆实例设置 GitHub 加速（仅在启动时调用）
+        
+        根据 Node.js 版本决定使用哪种方式：
+        - Node.js >= v20: 复制 github-proxy-interceptor.js 到酒馆根目录
+        - Node.js < v20: 设置 Git 全局配置
+        
+        参数 args:
+          - instance_path: 酒馆实例路径
+        返回: { status, msg, method }
+        """
+        import re
+        
+        instance_path = args.get('instance_path', '').strip()
+        if not instance_path or not os.path.exists(instance_path):
+            return {'status': False, 'msg': '实例路径不存在'}
+        
+        # 获取 GitHub 加速配置
+        proxy_config = self.__get_config('github_proxy') or {}
+        enabled = proxy_config.get('enabled', False)
+        proxy_url = proxy_config.get('url', 'https://ghfast.top/').rstrip('/')
+        
+        # 如果未启用加速，直接返回
+        if not enabled:
+            return {'status': True, 'msg': 'GitHub 加速未启用', 'method': 'none'}
+        
+        # 检测 Node.js 版本
+        node_version = self._get_nodejs_version(instance_path)
+        
+        # PC 端逻辑：Node.js >= 18.19.0 支持 --import，不需要 Git 配置
+        # 这里我们保守一点，用 v20 作为分界线
+        if node_version and self._parse_node_version(node_version) >= (20, 0, 0):
+            # Node.js >= v20，使用拦截器方式（不需要 Git 配置）
+            return self._setup_interceptor_mode(instance_path, proxy_url)
+        else:
+            # Node.js < v20，使用 Git 全局配置
+            return self._setup_git_proxy_mode(proxy_url)
+    
+    def _get_nodejs_version(self, instance_path):
+        """获取实例的 Node.js 版本
+        
+        Args:
+            instance_path: 实例路径
+        Returns:
+            版本号字符串（如 'v20.11.0'）或 None
+        """
+        try:
+            # 尝试从实例的 node_modules/.bin/node 获取
+            node_exe = os.path.join(instance_path, 'node_modules', '.bin', 'node')
+            if not os.path.exists(node_exe):
+                # Windows 下可能是 node.exe
+                node_exe = os.path.join(instance_path, 'node_modules', '.bin', 'node.cmd')
+            
+            if not os.path.exists(node_exe):
+                # 尝试系统 node
+                node_exe = 'node'
+            
+            result = public.ExecShell('{} -v'.format(node_exe))
+            if result[0]:
+                version = result[0].strip()
+                if version.startswith('v'):
+                    return version
+        except Exception as e:
+            pass
+        
+        return None
+    
+    def _parse_node_version(self, version_str):
+        """解析 Node.js 版本字符串为元组
+        
+        Args:
+            version_str: 版本字符串（如 'v20.11.0'）
+        Returns:
+            元组 (major, minor, patch)
+        """
+        try:
+            match = re.match(r'v?(\d+)\.(\d+)\.(\d+)', version_str)
+            if match:
+                return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        except Exception:
+            pass
+        
+        return (0, 0, 0)
+    
+    def _setup_interceptor_mode(self, instance_path, proxy_url):
+        """设置拦截器模式（Node.js >= v20）
+        
+        将 github-proxy-interceptor.js 复制到酒馆根目录
+        
+        Args:
+            instance_path: 实例路径
+            proxy_url: 代理 URL
+        Returns:
+            { status, msg, method }
+        """
+        try:
+            # 模板文件路径
+            template_path = os.path.join(self.__plugin_path, 'static', 'js', 'github-proxy-interceptor.js')
+            if not os.path.exists(template_path):
+                return {'status': False, 'msg': '拦截器模板文件不存在'}
+            
+            # 目标路径
+            target_path = os.path.join(instance_path, 'github-proxy-interceptor.js')
+            
+            # 复制文件
+            import shutil
+            shutil.copy2(template_path, target_path)
+            
+            # 修改文件中的 PROXY_URL
+            with open(target_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 替换代理地址
+            content = re.sub(
+                r"const PROXY_URL = '[^']*';",
+                "const PROXY_URL = '{}';".format(proxy_url),
+                content
+            )
+            
+            with open(target_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            return {
+                'status': True,
+                'msg': '已设置拦截器模式',
+                'method': 'interceptor',
+                'file': target_path
+            }
+        except Exception as e:
+            import traceback
+            return {'status': False, 'msg': '设置拦截器失败: ' + str(e) + '\n' + traceback.format_exc()}
+    
+    def _setup_git_proxy_mode(self, proxy_url):
+        """设置 Git 全局配置模式（Node.js < v20）
+        
+        执行: git config --global url."<proxy>/https://github.com/".insteadOf "https://github.com/"
+        
+        Args:
+            proxy_url: 代理 URL
+        Returns:
+            { status, msg, method }
+        """
+        try:
+            # 查找 git 可执行文件
+            git_exe = self._find_git_executable()
+            if not git_exe:
+                return {'status': False, 'msg': '未找到 Git 可执行文件'}
+            
+            # 构建配置键
+            key = 'url.{}/https://github.com/.insteadOf'.format(proxy_url.rstrip('/'))
+            
+            # 执行 git config
+            cmd = '{} config --global "{}" "https://github.com/"'.format(git_exe, key)
+            result = public.ExecShell(cmd)
+            
+            if result[1]:  # stderr 有内容
+                return {'status': False, 'msg': '设置 Git 配置失败: ' + result[1]}
+            
+            return {
+                'status': True,
+                'msg': '已设置 Git 全局代理',
+                'method': 'git_proxy',
+                'git_exe': git_exe,
+                'url': proxy_url
+            }
+        except Exception as e:
+            import traceback
+            return {'status': False, 'msg': '设置 Git 代理失败: ' + str(e) + '\n' + traceback.format_exc()}
+    
+    def _find_git_executable(self):
+        """查找 Git 可执行文件
+        
+        Returns:
+            Git 可执行文件路径或 None
+        """
+        # 优先检查内置 Git
+        builtin_git = '/www/server/stl/git/bin/git'
+        if os.path.exists(builtin_git):
+            return builtin_git
+        
+        # 尝试系统 git
+        result = public.ExecShell('which git')
+        if result[0]:
+            return result[0].strip()
+        
+        # Windows 兼容
+        result = public.ExecShell('where git')
+        if result[0]:
+            lines = result[0].strip().split('\n')
+            if lines:
+                return lines[0].strip()
+        
+        return None
+    
+    def cleanup_github_accelerate_for_instance(self, args):
+        """清理酒馆实例的 GitHub 加速设置
+        
+        参数 args:
+          - instance_path: 实例路径
+        返回: { status, msg }
+        """
+        instance_path = args.get('instance_path', '').strip()
+        if not instance_path:
+            return {'status': False, 'msg': '实例路径不能为空'}
+        
+        # 删除拦截器文件
+        interceptor_file = os.path.join(instance_path, 'github-proxy-interceptor.js')
+        if os.path.exists(interceptor_file):
+            try:
+                os.remove(interceptor_file)
+            except Exception as e:
+                return {'status': False, 'msg': '删除拦截器文件失败: ' + str(e)}
+        
+        # 清理 Git 全局配置
+        proxy_config = self.__get_config('github_proxy') or {}
+        proxy_url = proxy_config.get('url', 'https://ghfast.top/').rstrip('/')
+        
+        git_exe = self._find_git_executable()
+        if git_exe:
+            key = 'url.{}/https://github.com/.insteadOf'.format(proxy_url)
+            cmd = '{} config --global --unset "{}"'.format(git_exe, key)
+            public.ExecShell(cmd)  # 忽略错误，可能配置不存在
+        
+        return {'status': True, 'msg': '已清理 GitHub 加速设置'}
+
+    def _cleanup_git_proxy_on_stop(self):
+        """酒馆停止时清理 Git 全局代理配置
+        
+        仅在 Node.js < v20 且开启了 GitHub 加速时才需要清理
+        这个方法在 pm2_stop 和 pm2_restart 时调用
+        """
+        try:
+            # 获取 GitHub 加速配置
+            proxy_config = self.__get_config('github_proxy') or {}
+            enabled = proxy_config.get('enabled', False)
+            proxy_url = proxy_config.get('url', 'https://ghfast.top/').rstrip('/')
+            
+            # 如果未启用加速，无需清理
+            if not enabled:
+                return
+            
+            # 检测当前使用的 Node.js 版本
+            # 优先检查在线安装的默认路径
+            st_path = self.__get_config('sillytavern_path') or sillyTavern_path
+            node_version = self._get_nodejs_version(st_path)
+            
+            # 如果 Node.js >= v20，使用的是拦截器模式，不需要清理 Git 配置
+            if node_version and self._parse_node_version(node_version) >= (20, 0, 0):
+                return
+            
+            # Node.js < v20 或未检测到，清理 Git 全局配置
+            git_exe = self._find_git_executable()
+            if git_exe:
+                key = 'url.{}/https://github.com/.insteadOf'.format(proxy_url)
+                cmd = '{} config --global --unset "{}"'.format(git_exe, key)
+                public.ExecShell(cmd)  # 忽略错误，可能配置不存在
+        except Exception as e:
+            # 静默失败，不影响停止操作
+            pass
 
     def tcping_proxies(self, args):
         """后台线程对多个加速地址执行 TCPing
