@@ -1040,7 +1040,6 @@
         "openrouter_allow_fallbacks": true,
         "openrouter_middleout": "on",
         "reverse_proxy": "",
-        "chat_completion_source": "pollinations",
         "chat_completion_source": "openai",
         "max_context_unlocked": true,
         "show_external_models": false,

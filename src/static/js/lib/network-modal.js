@@ -254,7 +254,7 @@ var NetworkModal = (function () {
                     _testResult = {
                         timestamp: Date.now(),
                         accessible: accessible,
-                        message: accessible ? '' : '反向代理访问受阻，请检查安全组是否开放 80 和 443 端口'
+                        message: accessible ? '' : '反向代理访问受阻，请检查安全组是否有开放 80 和 443 端口'
                     };
                     _lastServiceStart = window.ConsolePage && window.ConsolePage.getServiceStartTime ? 
                         window.ConsolePage.getServiceStartTime() : null;
@@ -293,13 +293,13 @@ var NetworkModal = (function () {
                             
                             if (_ipv4Accessible === false && _ipv6Accessible === false) {
                                 // 两者都受阻
-                                message = 'IPV4 与 IPV6 访问受阻，如果是云服务请到对应安全组开放端口';
+                                message = 'IPV4 与 IPV6 访问受阻，如果是云服务器请到对应安全组开放端口';
                             } else if (_ipv4Accessible === false) {
                                 // 仅 IPv4 受阻
-                                message = 'IPV4 访问受阻，如果是云服务请到对应安全组开放端口';
+                                message = 'IPV4 访问受阻，如果是云服务器请到对应安全组开放端口';
                             } else if (_ipv6Accessible === false) {
                                 // 仅 IPv6 受阻
-                                message = 'IPV6 访问受阻，如果是云服务请到对应安全组开放端口';
+                                message = 'IPV6 访问受阻，如果是云服务器请到对应安全组开放端口';
                             } else {
                                 // 至少有一个可访问
                                 allBlocked = false;

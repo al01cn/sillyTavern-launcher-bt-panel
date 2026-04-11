@@ -38,7 +38,8 @@ function renderTavernPage() {
     // 初始化配置管理器
     TavernConfig.init(function(success) {
         if (!success) {
-            console.error('配置加载失败');
+            // 错误已在 TavernConfig.init 中处理，这里只需记录日志
+            console.warn('[Tavern] 配置初始化未完成');
         }
     });
 }

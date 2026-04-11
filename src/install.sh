@@ -77,10 +77,60 @@ EOF
     rm -rf "${install_path}"
 
     if [ "${keep_data}" -eq 0 ]; then
-        echo "[警告] 根据设置，卸载将删除 ${stl_path}"
+        echo "[警告] 根据设置，卸载将删除酒馆数据和PM2服务"
+
+        # 删除反向代理配置
+        echo "正在删除反向代理配置..."
+        python3 <<'PYEOF'
+import sys
+import os
+sys.path.insert(0, '/www/server/panel')
+os.environ['BT_SETUP'] = 'True'
+
+try:
+    import public
+    from panelSite import panelSite
+    
+    site = panelSite()
+    
+    # 获取站点列表，查找 stl_sillytavern 站点
+    sites = site.GetSiteInfo(None)
+    target_site = None
+    for s in sites:
+        if s.get('name') == 'stl_sillytavern':
+            target_site = s
+            break
+    
+    if target_site:
+        site_id = target_site.get('id')
+        # 删除站点（包括反向代理配置）
+        result = site.DeleteSite(None, {'id': site_id, 'webname': 'stl_sillytavern'})
+        if result.get('status'):
+            print("反向代理配置已删除")
+        else:
+            print("删除反向代理配置失败: " + str(result.get('msg', '')))
+    else:
+        print("未找到 stl_sillytavern 站点，跳过删除")
+except Exception as e:
+    print("删除反向代理配置时出错: " + str(e))
+PYEOF
+        
+        # 停止并删除酒馆的 PM2 服务
+        if command -v pm2 &> /dev/null; then
+            echo "正在停止酒馆 PM2 服务..."
+            pm2 stop stl_sillytavern 2>/dev/null || true
+            echo "正在删除酒馆 PM2 服务记录..."
+            pm2 delete stl_sillytavern 2>/dev/null || true
+            echo "酒馆 PM2 服务已清理"
+        fi
+        
+        # 删除酒馆数据目录
+        echo "正在删除酒馆数据目录: ${stl_path}"
         rm -rf "${stl_path}"
+        echo "酒馆数据目录已删除"
     else
-        echo "保留数据目录：${stl_path}"
+        echo "保留酒馆数据目录：${stl_path}"
+        echo "注意：酒馆服务仍在运行，如需停止请手动执行 pm2 stop stl_sillytavern"
     fi
 
     echo "=========================================="

@@ -55,6 +55,7 @@ var ProxyModal = (function () {
             '<div class="stl-pm-alert stl-pm-alert-warning" id="pm-alert-nginx" style="display:none;">' +
                 '<i class="bi bi-exclamation-triangle"></i>' +
                 '<span>Nginx 未安装或未运行，无法使用反向代理功能</span>' +
+                '<button class="btn btn-bt btn-bt-sm" id="pm-install-nginx-btn" onclick="ProxyModal.installNginx()" style="margin-left: 10px;">一键安装</button>' +
             '</div>' +
 
             // Tab 切换
@@ -112,101 +113,31 @@ var ProxyModal = (function () {
                 '</div>' +
             '</div>' +
 
-            // SSL 面板
+            // SSL 设置面板
             '<div class="stl-pm-panel" id="pm-panel-ssl">' +
                 '<div class="stl-pm-section">' +
-                    '<div class="stl-pm-section-title"><i class="bi bi-lock"></i> 当前 SSL 状态</div>' +
-                    '<div class="stl-pm-ssl-status" id="pm-ssl-status-text">' +
-                        '<span class="stl-pm-loading"><i class="bi bi-hourglass-split"></i> 检测中...</span>' +
+                    '<div class="stl-pm-section-title"><i class="bi bi-shield-lock"></i> SSL 证书管理</div>' +
+
+                    // SSL 状态显示
+                    '<div class="stl-pm-field">' +
+                        '<label class="stl-pm-field-label">当前状态</label>' +
+                        '<div id="pm-ssl-status-text" style="padding:10px 0;">' +
+                            '<span class="stl-pm-loading"><i class="bi bi-hourglass-split"></i> 检测中...</span>' +
+                        '</div>' +
                     '</div>' +
-                '</div>' +
 
-                '<div class="stl-pm-section">' +
-                    '<div class="stl-pm-section-title"><i class="bi bi-upload"></i> 配置方式</div>' +
+                    // 提示信息
+                    '<div class="stl-pm-alert stl-pm-alert-info" style="margin-top:15px;">' +
+                        '<i class="bi bi-info-circle"></i>' +
+                        '<span>SSL 证书配置需要在宝塔面板的 Nginx 管理页面中进行，支持手动上传证书或申请 Let\'s Encrypt 免费证书。</span>' +
+                    '</div>' +
 
-                    '<div class="stl-pm-ssl-type-btns">' +
-                        '<button class="stl-pm-ssl-type-btn active" data-type="manual" onclick="ProxyModal.switchSslType(\'manual\')">' +
-                            '<i class="bi bi-file-earmark-text"></i> 手动上传' +
+                    // 前往按钮
+                    '<div style="text-align:center;margin-top:20px;">' +
+                        '<button class="btn btn-bt" onclick="ProxyModal.goToNginxPage()" style="padding:10px 30px;font-size:14px;">' +
+                            '<i class="bi bi-box-arrow-up-right"></i> 立即前往 Nginx 管理' +
                         '</button>' +
-                        '<button class="stl-pm-ssl-type-btn" data-type="letsencrypt" onclick="ProxyModal.switchSslType(\'letsencrypt\')">' +
-                            '<i class="bi bi-magic"></i> 申请免费证书' +
-                        '</button>' +
                     '</div>' +
-
-                    // 手动上传面板
-                    '<div class="stl-pm-ssl-manual" id="pm-ssl-manual">' +
-                        // 左右对称布局：证书 | 密钥
-                        '<div class="stl-pm-ssl-cols">' +
-                            // 左侧：证书
-                            '<div class="stl-pm-ssl-col">' +
-                                '<div class="stl-pm-field-label" style="margin-bottom:6px;">证书（.crt / .pem）</div>' +
-                                '<div class="stl-pm-drop-zone" id="pm-cert-drop" ' +
-                                    'ondragover="ProxyModal._onDropOver(event, \'cert\')" ' +
-                                    'ondragleave="ProxyModal._onDropLeave(event, \'cert\')" ' +
-                                    'ondrop="ProxyModal._onDrop(event, \'cert\')" ' +
-                                    'onclick="ProxyModal.browseCert()">' +
-                                    '<i class="bi bi-file-earmark-arrow-up" style="font-size:24px;opacity:.4;margin-bottom:4px;"></i><br>' +
-                                    '<span id="pm-cert-filename">拖拽 .crt / .pem 到此处<br>或点击选择文件</span>' +
-                                '</div>' +
-                                '<input type="file" id="pm-cert-file" accept=".crt,.pem,.cer,.cert" style="display:none" onchange="ProxyModal.onCertFileChange(this)">' +
-                                '<textarea class="stl-pm-textarea" id="pm-cert-text" ' +
-                                    'placeholder="-----BEGIN CERTIFICATE----- ... -----END CERTIFICATE-----" ' +
-                                    'rows="6" style="margin-top:8px;resize:vertical;font-size:11px;" ' +
-                                    'oninput="ProxyModal.onManualInput()"></textarea>' +
-                            '</div>' +
-
-                            // 右侧：密钥
-                            '<div class="stl-pm-ssl-col">' +
-                                '<div class="stl-pm-field-label" style="margin-bottom:6px;">密钥（.key）</div>' +
-                                '<div class="stl-pm-drop-zone" id="pm-key-drop" ' +
-                                    'ondragover="ProxyModal._onDropOver(event, \'key\')" ' +
-                                    'ondragleave="ProxyModal._onDropLeave(event, \'key\')" ' +
-                                    'ondrop="ProxyModal._onDrop(event, \'key\')" ' +
-                                    'onclick="ProxyModal.browseKey()">' +
-                                    '<i class="bi bi-file-earmark-lock-arrow-up" style="font-size:24px;opacity:.4;margin-bottom:4px;"></i><br>' +
-                                    '<span id="pm-key-filename">拖拽 .key 文件到此处<br>或点击选择文件</span>' +
-                                '</div>' +
-                                '<input type="file" id="pm-key-file" accept=".key" style="display:none" onchange="ProxyModal.onKeyFileChange(this)">' +
-                                '<textarea class="stl-pm-textarea" id="pm-key-text" ' +
-                                    'placeholder="-----BEGIN PRIVATE KEY----- ... -----END PRIVATE KEY-----" ' +
-                                    'rows="6" style="margin-top:8px;resize:vertical;font-size:11px;" ' +
-                                    'oninput="ProxyModal.onManualInput()"></textarea>' +
-                            '</div>' +
-                        '</div>' +
-
-                        '<div class="stl-pm-upload-actions" style="margin-top:12px;">' +
-                            '<button class="stl-pm-btn btn-bt" id="pm-upload-cert-btn" onclick="ProxyModal.uploadCert()" disabled>' +
-                                '<i class="bi bi-upload"></i> 上传并启用 SSL' +
-                            '</button>' +
-                        '</div>' +
-                    '</div>' +
-
-                    // Let's Encrypt 面板
-                    '<div class="stl-pm-ssl-le" id="pm-ssl-le" style="display:none;">' +
-                        '<div class="stl-pm-alert stl-pm-alert-info">' +
-                            '<i class="bi bi-info-circle"></i>' +
-                            '<span>Let\'s Encrypt 是免费的自动证书颁发机构。证书有效期 90 天，到期前自动续期。</span>' +
-                        '</div>' +
-
-                        '<div class="stl-pm-field">' +
-                            '<label class="stl-pm-field-label">申请域名（需已解析到当前服务器）</label>' +
-                            '<input type="text" class="stl-pm-input" id="pm-le-domain" ' +
-                                'placeholder="例如：stl.example.com（支持多域名，用英文逗号分隔）">' +
-                            '<div class="stl-pm-help">域名必须已经解析到本服务器 IP，且防火墙/安全组已开放 80 端口</div>' +
-                        '</div>' +
-
-                        '<div class="stl-pm-upload-actions">' +
-                            '<button class="stl-pm-btn btn-bt" id="pm-le-apply-btn" onclick="ProxyModal.applyLetsEncrypt()">' +
-                                '<i class="bi bi-magic"></i> 申请并启用证书' +
-                            '</button>' +
-                        '</div>' +
-                    '</div>' +
-                '</div>' +
-
-                '<div class="stl-pm-footer">' +
-                    '<button class="stl-pm-btn btn-bt-danger btn-bt-sm" id="pm-close-ssl-btn" onclick="ProxyModal.closeSsl()" style="display:none;">' +
-                        '<i class="bi bi-x-circle"></i> 关闭 SSL' +
-                    '</button>' +
                 '</div>' +
             '</div>' +
 
@@ -263,8 +194,17 @@ var ProxyModal = (function () {
         var enabled = $toggle.prop('checked');
         $toggle.closest('.stl-pm-toggle-wrap').find('.stl-pm-toggle-text')
             .text(enabled ? '开启' : '关闭');
-        $basicProxySection().toggle(enabled);
-        $basicProxySection().find('input, button').prop('disabled', !enabled);
+        
+        // 始终显示配置区域，但根据状态设置是否可编辑
+        var $section = $basicProxySection();
+        $section.show(); // 始终显示
+        
+        // 设置输入框和按钮的禁用状态
+        $section.find('input[type="text"]').prop('disabled', !enabled);
+        $section.find('button').not('#pm-apply-basic-btn').prop('disabled', !enabled);
+        
+        // “应用配置”按钮始终可用（用于切换启用/禁用状态）
+        $('#pm-apply-basic-btn').prop('disabled', false);
     }
 
     function onDomainInput() {
@@ -367,12 +307,12 @@ var ProxyModal = (function () {
         var btn = $('#pm-apply-basic-btn');
 
         if (!enabled) {
-            // 关闭代理
+            // 关闭代理：禁用而不是删除
             setBtnLoading(btn, '应用配置', true);
-            Nginx.deleteProxy(function (res) {
+            Nginx.setProxyStatus(false, function (res) {
                 setBtnLoading(btn, '应用配置', false);
                 if (res.status) {
-                    layer.msg('反向代理已关闭', { icon: 1 });
+                    layer.msg('反向代理已禁用（配置保留）', { icon: 1 });
                 } else {
                     layer.msg(res.msg || '操作失败', { icon: 2 });
                 }
@@ -380,29 +320,45 @@ var ProxyModal = (function () {
             return;
         }
 
-        // 开启/更新代理
+        // 开启代理：先检查代理是否存在且已禁用
         setBtnLoading(btn, '应用配置', true);
+        
+        Nginx.getProxyInfo(function (info) {
+            if (info.status && info.exists && !info.enabled) {
+                // 代理存在但已禁用，直接启用
+                Nginx.setProxyStatus(true, function (res) {
+                    setBtnLoading(btn, '应用配置', false);
+                    if (res.status) {
+                        layer.msg('反向代理已启用', { icon: 1 });
+                    } else {
+                        layer.msg(res.msg || '操作失败', { icon: 2 });
+                    }
+                });
+                return;
+            }
+            
+            // 代理不存在或需要更新，走正常流程
+            getTavernUrl(function (url, port) {
+                var domain = $domainInput.val().trim();
 
-        getTavernUrl(function (url, port) {
-            var domain = $domainInput.val().trim();
+                // 先确保代理存在（createProxy 用 domains=domain 参数）
+                _ensureProxyWithDomain({ port: port }, domain, function (res) {
+                    setBtnLoading(btn, '应用配置', false);
+                    if (!res.status) {
+                        layer.msg(res.msg || '操作失败', { icon: 2 });
+                        return;
+                    }
 
-            // 先确保代理存在（createProxy 用 domains=domain 参数）
-            _ensureProxyWithDomain({ port: port }, domain, function (res) {
-                setBtnLoading(btn, '应用配置', false);
-                if (!res.status) {
-                    layer.msg(res.msg || '操作失败', { icon: 2 });
-                    return;
-                }
+                    var actionText = { created: '已创建', updated: '已更新', exists: '已是最新' };
+                    layer.msg('反向代理 ' + (actionText[res.action] || '操作完成'), { icon: 1 });
 
-                var actionText = { created: '已创建', updated: '已更新', exists: '已是最新' };
-                layer.msg('反向代理 ' + (actionText[res.action] || '操作完成'), { icon: 1 });
-
-                // 同步域名绑定（确保域名在 BT 的域名列表中）
-                if (domain) {
-                    syncDomains([domain], function () {
-                        // 域名同步完成，不影响主提示
-                    });
-                }
+                    // 同步域名绑定（确保域名在 BT 的域名列表中）
+                    if (domain) {
+                        syncDomains([domain], function () {
+                            // 域名同步完成，不影响主提示
+                        });
+                    }
+                });
             });
         });
     }
@@ -511,7 +467,6 @@ var ProxyModal = (function () {
 
     function loadSslStatus() {
         $sslStatus.html('<span class="stl-pm-loading"><i class="bi bi-hourglass-split"></i> 检测中...</span>');
-        $('#pm-close-ssl-btn').hide();
 
         Nginx.getSslInfo(function (res) {
             if (!res.status) {
@@ -522,26 +477,27 @@ var ProxyModal = (function () {
 
             if (!res.hasSsl) {
                 $sslStatus.html('<span class="stl-pm-ssl-badge stl-pm-ssl-badge-none">' +
-                    '<i class="bi bi-x-circle"></i> 未配置 SSL</span>');
+                    '<i class="bi bi-x-circle"></i> 未配置 SSL</span>' +
+                    '<div style="margin-top:8px;color:#999;font-size:12px;">点击“立即前往 Nginx 管理”按钮配置 SSL 证书</div>');
                 return;
             }
 
             var info = res.sslInfo;
             var subject = (info.cert_data && info.cert_data.subject) ?
                 info.cert_data.subject.replace('CN=', '') : '未知';
-            var expireDate = (info.cert_data && info.cert_data.dnsnail) ?
-                info.cert_data.dnsnail.split(';')[0] : '未知';
+            var expireDate = (info.cert_data && info.cert_data.notAfter) ?
+                info.cert_data.notAfter : '未知';
 
             $sslStatus.html(
                 '<span class="stl-pm-ssl-badge stl-pm-ssl-badge-ok">' +
                     '<i class="bi bi-check-circle"></i> 已启用 SSL' +
                 '</span>' +
-                '<span class="stl-pm-ssl-detail">' +
-                    '<b>域名：</b>' + subject + ' &nbsp; ' +
-                    '<b>到期：</b>' + expireDate +
-                '</span>'
+                '<div style="margin-top:10px;color:#666;font-size:13px;line-height:1.8;">' +
+                    '<div><b>域名：</b>' + subject + '</div>' +
+                    '<div><b>到期时间：</b>' + expireDate + '</div>' +
+                    '<div style="margin-top:5px;color:#999;font-size:12px;">如需修改证书，请点击“立即前往 Nginx 管理”按钮</div>' +
+                '</div>'
             );
-            $('#pm-close-ssl-btn').show();
         });
     }
 
@@ -789,7 +745,8 @@ var ProxyModal = (function () {
 
             // 获取代理状态（_siteName 已在 open 时设置）
             Nginx.getProxyInfo(function (res) {
-                var enabled = res.status && res.exists;
+                // 使用 enabled 字段判断是否启用，而不是 exists
+                var enabled = res.status && res.exists && res.enabled;
                 $toggle.prop('checked', enabled);
                 onToggleChange();
 
@@ -820,30 +777,96 @@ var ProxyModal = (function () {
         }
     }
 
+    /**
+     * 前往宝塔 Nginx 管理页面
+     */
+    function goToNginxPage() {
+        // 关闭当前弹窗
+        close();
+        // 跳转到宝塔面板的 Nginx 管理页面
+        window.location.href = '/site/nginx';
+    }
+
+    /**
+     * 一键安装 Nginx
+     */
+    function installNginx() {
+        layer.confirm('将向宝塔面板提交 Nginx 安装任务，安装进度请在宝塔面板左上角消息中心查看，确认？', {
+            btn: ['确认', '取消']
+        }, function(index) {
+            layer.close(index);
+
+            // 直接调用安装接口
+            Nginx.autoSetupNginx(
+                function(rdata) {
+                    if (rdata.status && rdata.taskSubmitted) {
+                        // 任务已提交，提示用户查看消息中心
+                        layer.alert(
+                            '<div style="text-align:center;padding:20px;">' +
+                            '<i class="bi bi-info-circle" style="font-size:48px;color:#17a2b8;"></i>' +
+                            '<h4 style="margin-top:15px;">安装任务已提交</h4>' +
+                            '<p style="color:#666;margin:15px 0;line-height:1.8;">' +
+                            'Nginx 安装任务已发送到宝塔面板<br>' +
+                            '请查看 <b style="color:#17a2b8;">宝塔面板左上角的消息中心</b><br>' +
+                            '了解实时安装进度<br><br>' +
+                            '<span style="color:#999;font-size:12px;">安装完成后，请重新打开反向代理管理弹窗</span>' +
+                            '</p>' +
+                            '</div>',
+                            {
+                                icon: 0,
+                                title: '提示',
+                                btn: ['我知道了'],
+                                yes: function(alertIdx) {
+                                    layer.close(alertIdx);
+                                }
+                            }
+                        );
+                    } else if (rdata.status) {
+                        // 其他情况（已安装或已启动）
+                        layer.msg(rdata.msg, { icon: 1 });
+                        checkNginxAndRefresh();
+                    } else {
+                        layer.msg('提交失败: ' + rdata.msg, { icon: 2 });
+                    }
+                },
+                function(progress) {
+                    // 不需要进度回调，静默处理
+                }
+            );
+        });
+    }
+
+    /**
+     * 检查 Nginx 状态并刷新页面
+     */
+    function checkNginxAndRefresh() {
+        Nginx.isNginxInstalled(function(result) {
+            if (result.status && result.installed && result.running) {
+                // Nginx 已安装且运行，隐藏警告，启用控件
+                $('#pm-alert-nginx').hide();
+                $('#pm-proxy-toggle').prop('disabled', false);
+                $('#pm-apply-basic-btn').prop('disabled', false);
+                $('.stl-pm-ssl-type-btn').removeClass('disabled').prop('disabled', false);
+
+                // 加载初始数据
+                loadInitialData('');
+            }
+        });
+    }
+
     // ======== 对外暴露 ========
 
     return {
         open: open,
         close: close,
+        installNginx: installNginx,
+        goToNginxPage: goToNginxPage,
         switchTab: switchTab,
         onToggleChange: onToggleChange,
         onDomainInput: onDomainInput,
         saveDomain: saveDomain,
         refreshTavernUrl: refreshTavernUrl,
         applyBasic: applyBasic,
-        switchSslType: switchSslType,
-        loadSslStatus: loadSslStatus,
-        browseCert: browseCert,
-        browseKey: browseKey,
-        onCertFileChange: onCertFileChange,
-        onKeyFileChange: onKeyFileChange,
-        onManualInput: onManualInput,
-        validateManualCert: validateManualCert,
-        _onDropOver: _onDropOver,
-        _onDropLeave: _onDropLeave,
-        _onDrop: _onDrop,
-        uploadCert: uploadCert,
-        applyLetsEncrypt: applyLetsEncrypt,
-        closeSsl: closeSsl
+        loadSslStatus: loadSslStatus
     };
 })();

@@ -82,6 +82,15 @@ var Nginx = (function () {
         return { status: false, msg: msg || '未知错误' };
     }
 
+    /**
+     * 安全触发回调（支持 progress 对象和纯字符串）
+     */
+    function _report(onProgress, data) {
+        if (typeof onProgress === 'function') {
+            onProgress(data);
+        }
+    }
+
     // ======== 公开方法 ========
 
     /**
@@ -187,6 +196,7 @@ var Nginx = (function () {
                     status: true,
                     exists: !!found,
                     proxy: found || null,
+                    enabled: found ? (found.status == 1 || found.status === '1') : false,  // 兼容数字和字符串
                     msg: found ? '代理已存在' : '代理不存在'
                 });
             },
@@ -268,6 +278,42 @@ var Nginx = (function () {
                     remove_path: 1,
                     id: proxyId,
                     site_name: _siteName
+                },
+                function (rdata) {
+                    if (callback) callback({
+                        status: !!(rdata && rdata.status),
+                        msg: (rdata && rdata.msg) || '未知响应'
+                    });
+                },
+                function (msg) {
+                    if (callback) callback(_fail(msg));
+                }
+            );
+        });
+    }
+
+    /**
+     * 4.5. 禁用/启用酒馆反向代理
+     *
+     * @param {boolean}  enabled  true=启用, false=禁用
+     * @param {function} callback 回调 function({ status, msg })
+     */
+    function setProxyStatus(enabled, callback) {
+        getProxyInfo(function (info) {
+            if (!info.status) {
+                if (callback) callback(info);
+                return;
+            }
+            if (!info.exists) {
+                if (callback) callback({ status: false, msg: '代理不存在，无法修改状态' });
+                return;
+            }
+
+            _btRequest(
+                '/mod/proxy/com/set_site_stop',
+                {
+                    site_name: _siteName,
+                    status: enabled ? 1 : 0  // 1=启用, 0=禁用
                 },
                 function (rdata) {
                     if (callback) callback({
@@ -767,6 +813,210 @@ var Nginx = (function () {
         });
     }
 
+    /**
+     * 18. 安装 Nginx（通过宝塔面板插件商店）
+     *
+     * 完整流程：
+     *   1) 通过 get_soft_list 确认 nginx 未安装
+     *   2) 调用 install_plugin 下载插件安装包（返回 tmp_path）
+     *   3) 调用 input_package 使用 tmp_path 确认安装
+     *
+     * 注意：宝塔的安装是异步任务，input_package 只会返回"已将安装任务添加到队列!"
+     *       实际安装进度需在宝塔面板左上角消息中心查看
+     *
+     * @param {function} callback 回调 function(rdata)  { status: true/false, msg: '...' }
+     * @param {function} onProgress 进度回调 function(msg)  安装阶段提示
+     */
+    function installNginx(callback, onProgress) {
+        // 第 0 步：确认 nginx 确实未安装
+        _report(onProgress, '正在检查 Nginx 安装状态...');
+
+        _btRequest('/plugin?action=get_soft_list', {
+            type: 0,
+            query: 'Nginx',
+            p: 1,
+            row: 15,
+            force: 0
+        }, function (rdata) {
+            if (rdata && rdata.list && rdata.list.data) {
+                for (var i = 0; i < rdata.list.data.length; i++) {
+                    if (rdata.list.data[i].name === 'nginx' && rdata.list.data[i].setup) {
+                        _report(onProgress, 'Nginx 已安装，无需重复安装');
+                        if (callback) callback({ status: true, msg: 'Nginx 已安装' });
+                        return;
+                    }
+                }
+            }
+
+            // 第 1 步：下载插件
+            _report(onProgress, 'Nginx 未安装，正在下载...');
+
+            _btRequest('/plugin?action=install_plugin', {
+                sName: 'nginx',
+                version: 0,  // 0 表示最新版本
+                min_version: 7
+            }, function (rdata) {
+                if (!rdata || !rdata.tmp_path) {
+                    _report(onProgress, '下载 Nginx 插件失败');
+                    if (callback) callback({ status: false, msg: '下载 Nginx 插件失败' });
+                    return;
+                }
+
+                var tmpPath = rdata.tmp_path;
+                _report(onProgress, '插件下载完成，正在提交安装任务...');
+
+                // 第 2 步：使用 input_package 提交安装任务（异步）
+                _btRequest('/plugin?action=input_package', {
+                    plugin_name: 'nginx',
+                    tmp_path: tmpPath,
+                    install_opt: 'i'
+                }, function (installRes) {
+                    if (!installRes || !installRes.status) {
+                        var msg = (installRes && installRes.msg) ? installRes.msg : '提交安装任务失败';
+                        _report(onProgress, msg);
+                        if (callback) callback({ status: false, msg: msg });
+                        return;
+                    }
+
+                    // 宝塔返回的是异步任务提交成功
+                    var taskMsg = installRes.msg || '已将安装任务添加到队列!';
+                    _report(onProgress, taskMsg);
+                    
+                    if (callback) callback({ 
+                        status: true, 
+                        msg: 'Nginx 安装任务已提交，请在宝塔面板左上角消息中心查看安装进度',
+                        taskSubmitted: true
+                    });
+                });
+            });
+        }, function (msg) {
+            _report(onProgress, '检查 Nginx 状态失败: ' + msg);
+            if (callback) callback({ status: false, msg: '检查 Nginx 状态失败: ' + msg });
+        });
+    }
+
+    /**
+     * 19. 一键自动安装并启动 Nginx
+     *
+     * 智能策略：
+     *   1) 检查 Nginx 是否已安装 → 未安装则安装
+     *   2) 检查 Nginx 是否运行 → 未运行则启动
+     *
+     * 注意：安装是异步任务，提交后会提示用户在宝塔消息中心查看进度
+     *
+     * @param {function} callback    回调 function(rdata)  { status, msg }
+     * @param {function} onProgress  进度回调 function(progress)  { stage, msg }
+     */
+    function autoSetupNginx(callback, onProgress) {
+        // === 第 1 步：检查 Nginx 状态 ===
+        _report(onProgress, { stage: 'check_nginx', msg: '正在检查 Nginx 安装状态...' });
+
+        isNginxInstalled(function (result) {
+            if (!result.status) {
+                if (callback) callback({ status: false, msg: result.msg || '检查 Nginx 状态失败' });
+                return;
+            }
+
+            if (result.installed && result.running) {
+                // Nginx 已安装且运行中
+                _report(onProgress, { stage: 'done', msg: 'Nginx 已安装且运行中' });
+                if (callback) callback({ status: true, msg: 'Nginx 已安装且运行中' });
+                return;
+            }
+
+            if (result.installed && !result.running) {
+                // 已安装但未运行，尝试启动
+                _report(onProgress, { stage: 'start_nginx', msg: 'Nginx 已安装但未运行，正在启动...' });
+                startNginx(function (startResult) {
+                    if (startResult.status) {
+                        _report(onProgress, { stage: 'done', msg: 'Nginx 启动成功' });
+                        if (callback) callback({ status: true, msg: 'Nginx 启动成功' });
+                    } else {
+                        _report(onProgress, { stage: 'start_failed', msg: startResult.msg });
+                        if (callback) callback({ status: false, msg: startResult.msg });
+                    }
+                });
+                return;
+            }
+
+            // 未安装，执行安装
+            _report(onProgress, { stage: 'install_nginx', msg: 'Nginx 未安装，正在提交安装任务...' });
+            installNginx(
+                function (installResult) {
+                    if (!installResult.status) {
+                        if (callback) callback({ status: false, msg: installResult.msg });
+                        return;
+                    }
+
+                    // 安装任务已提交（异步），提示用户查看消息中心
+                    _report(onProgress, { stage: 'task_submitted', msg: installResult.msg });
+                    
+                    if (callback) callback({ 
+                        status: true, 
+                        msg: installResult.msg,
+                        taskSubmitted: true,
+                        needManualCheck: true
+                    });
+                },
+                function (msg) {
+                    _report(onProgress, { stage: 'install_nginx', msg: msg });
+                }
+            );
+        });
+    }
+
+    /**
+     * 20. 启动 Nginx 服务
+     *
+     * @param {function} callback 回调 function({ status, msg })
+     */
+    function startNginx(callback) {
+        _btRequest('/plugin?action=get_soft_list', {
+            type: 0,
+            query: 'Nginx',
+            p: 1,
+            row: 15,
+            force: 0
+        }, function (rdata) {
+            if (!rdata || !rdata.list || !rdata.list.data) {
+                if (callback) callback({ status: false, msg: '未找到 Nginx 条目' });
+                return;
+            }
+
+            var nginxItem = null;
+            for (var i = 0; i < rdata.list.data.length; i++) {
+                if (rdata.list.data[i].name === 'nginx') {
+                    nginxItem = rdata.list.data[i];
+                    break;
+                }
+            }
+
+            if (!nginxItem) {
+                if (callback) callback({ status: false, msg: '未找到 Nginx 条目' });
+                return;
+            }
+
+            if (nginxItem.status) {
+                if (callback) callback({ status: true, msg: 'Nginx 已在运行' });
+                return;
+            }
+
+            // 调用启动接口
+            _btRequest('/mod/soft/com/start', {
+                sName: 'nginx'
+            }, function (startRes) {
+                if (callback) callback({
+                    status: !!(startRes && startRes.status),
+                    msg: (startRes && startRes.msg) || '未知响应'
+                });
+            }, function (msg) {
+                if (callback) callback({ status: false, msg: '启动 Nginx 失败: ' + msg });
+            });
+        }, function (msg) {
+            if (callback) callback({ status: false, msg: '查询 Nginx 状态失败: ' + msg });
+        });
+    }
+
     // ======== 对外暴露 ========
 
     return {
@@ -783,6 +1033,9 @@ var Nginx = (function () {
 
         /** 删除反向代理（自动查 id，幂等） */
         deleteProxy: deleteProxy,
+
+        /** 禁用/启用反向代理 */
+        setProxyStatus: setProxyStatus,
 
         /** 直接修改反向代理配置（需代理已存在） */
         setProxyConfig: setProxyConfig,
@@ -836,6 +1089,17 @@ var Nginx = (function () {
         // --- 站点名管理 ---
 
         /** 设置当前代理的站点名（即用户绑定的域名），由 ProxyModal 调用 */
-        setSiteName: setSiteName
+        setSiteName: setSiteName,
+
+        // --- Nginx 安装管理 ---
+
+        /** 安装 Nginx */
+        installNginx: installNginx,
+
+        /** 一键自动安装并启动 Nginx */
+        autoSetupNginx: autoSetupNginx,
+
+        /** 启动 Nginx 服务 */
+        startNginx: startNginx
     };
 })();

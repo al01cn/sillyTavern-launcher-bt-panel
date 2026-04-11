@@ -116,7 +116,10 @@ function renderSettingsPage() {
                         '<span class="stl-info-label"><i class="bi bi-terminal"></i> Node.js</span>' +
                         '<span class="stl-info-value" id="check-node">-</span>' +
                     '</div>' +
-                    '<button class="btn btn-bt-outline btn-bt-sm" onclick="checkNode(true)" style="margin-top: 8px;">检测</button>' +
+                    '<div class="stl-flex" style="gap:8px;margin-top:8px;">' +
+                        '<button class="btn btn-bt-outline btn-bt-sm" onclick="checkNode(true)">检测</button>' +
+                        '<button class="btn btn-bt btn-bt-sm" id="btn-install-nodejs" onclick="installNodeJs()" style="display:none;">一键安装</button>' +
+                    '</div>' +
                 '</div>' +
 
                 '<div class="stl-form-group">' +
@@ -959,13 +962,23 @@ function saveSettings() {
  */
 function stl_renderNodeStatus(data) {
     var $el = $('#check-node');
+    var $btnInstall = $('#btn-install-nodejs');
     if (!$el.length) return;
     if (data && data.installed) {
         $el.html('<span style="color: #20a53a;">' + (data.version || '') + ' 已安装</span>');
+        if ($btnInstall.length) {
+            $btnInstall.hide();
+        }
     } else if (data && data.installed === false) {
         $el.html('<span style="color: #d9534f;">未安装</span>');
+        if ($btnInstall.length) {
+            $btnInstall.show();
+        }
     } else {
         $el.html('-');
+        if ($btnInstall.length) {
+            $btnInstall.hide();
+        }
     }
 }
 
@@ -1018,5 +1031,71 @@ function checkGit(showMsg) {
         if (showMsg !== false) {
             layer.msg(result.installed ? 'Git 已安装' : 'Git 未安装', { icon: result.installed ? 1 : 2 });
         }
+    });
+}
+
+/**
+ * 一键安装 Node.js（使用 autoSetupNodejsPluginAndPM2AndSetDefault）
+ */
+function installNodeJs() {
+    layer.confirm('将自动安装 Node.js 版本管理器插件、合适的 Node.js 版本和 PM2，确认？', {
+        btn: ['确认', '取消']
+    }, function(index) {
+        layer.close(index);
+        
+        // 显示进度弹窗
+        var logContent = '<div id="nodejs-install-log" style="height: 300px; overflow-y: auto; background: #1e1e1e; color: #ccc; padding: 15px; font-family: Consolas, monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all;">[系统] 正在准备安装环境...</div>';
+        
+        var dialogIndex = layer.open({
+            type: 1,
+            title: 'Node.js 安装进度',
+            area: ['600px', '400px'],
+            content: '<div style="padding: 15px;">' + logContent + '</div>',
+            closeBtn: 1,
+            shadeClose: false,
+            btn: ['后台运行'],
+            yes: function(idx) {
+                layer.close(idx);
+            }
+        });
+        
+        // 定义日志追加函数
+        var lastLength = 0;
+        window.appendNodeJsLog = function(text) {
+            var $logDiv = $('#nodejs-install-log');
+            if ($logDiv.length) {
+                $logDiv.text($logDiv.text() + text + '\n');
+                $logDiv.scrollTop($logDiv[0].scrollHeight);
+                lastLength = $logDiv.text().length;
+            }
+        };
+        
+        // 调用一键安装函数
+        NodeJs.autoSetupNodejsPluginAndPM2AndSetDefault(
+            function(rdata) {
+                // 安装完成回调
+                if (rdata.status) {
+                    window.appendNodeJsLog('[SUCCESS] ' + rdata.msg);
+                    setTimeout(function() {
+                        layer.close(dialogIndex);
+                        layer.msg('Node.js 安装成功！', { icon: 1 });
+                        // 重新检测 Node.js 状态
+                        checkNode(false);
+                    }, 1500);
+                } else {
+                    window.appendNodeJsLog('[ERROR] ' + rdata.msg);
+                    setTimeout(function() {
+                        layer.close(dialogIndex);
+                        layer.msg('Node.js 安装失败: ' + rdata.msg, { icon: 2 });
+                    }, 1500);
+                }
+            },
+            function(progress) {
+                // 进度回调
+                if (progress && progress.msg) {
+                    window.appendNodeJsLog('[INFO] ' + progress.msg);
+                }
+            }
+        );
     });
 }

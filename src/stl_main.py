@@ -1266,26 +1266,73 @@ class stl_main:
             return {'status': False, 'msg': str(e), 'url': ''}
 
     def get_public_ips(self, args):
-        """获取服务器公网 IPv4 和 IPv6 地址（curl 方式）
+        """获取服务器公网 IPv4 和 IPv6 地址（curl 方式，多接口回退）
 
-        分别通过 curl 4.ipw.cn 和 curl 6.ipw.cn 获取，超时 5 秒。
+        分别通过多个接口获取 IPv4/IPv6，超时 5 秒，按优先级尝试。
+        
+        IPv4 接口优先级：
+          1. ip.sb
+          2. ifconfig.me
+          3. icanhazip.com
+          4. 4.ipw.cn (备用)
+        
+        IPv6 接口优先级：
+          1. -6 ip.sb
+          2. -6 ifconfig.me
+          3. -6 icanhazip.com
+          4. -6 iident.me
+          5. 6.ipw.cn (备用)
 
         返回: { status, ipv4, ipv6 }
         """
+        # IPv4 接口列表（按优先级排序）
+        ipv4_urls = [
+            'curl -s --connect-timeout 5 https://api.ip.sb/ip',
+            'curl -s --connect-timeout 5 https://ifconfig.me/ip',
+            'curl -s --connect-timeout 5 https://icanhazip.com',
+            'curl -s --connect-timeout 5 4.ipw.cn'
+        ]
+        
+        # IPv6 接口列表（按优先级排序）
+        ipv6_urls = [
+            'curl -s -6 --connect-timeout 5 https://api.ip.sb/ip',
+            'curl -s -6 --connect-timeout 5 https://ifconfig.me/ip',
+            'curl -s -6 --connect-timeout 5 https://icanhazip.com',
+            'curl -s -6 --connect-timeout 5 https://iident.me',
+            'curl -s --connect-timeout 5 6.ipw.cn'
+        ]
+        
         ipv4 = ''
         ipv6 = ''
-        try:
-            out4, _ = public.ExecShell('curl -s --connect-timeout 5 4.ipw.cn')
-            if out4:
-                ipv4 = out4.strip()
-        except Exception:
-            pass
-        try:
-            out6, _ = public.ExecShell('curl -s --connect-timeout 5 6.ipw.cn')
-            if out6:
-                ipv6 = out6.strip()
-        except Exception:
-            pass
+        
+        # 尝试获取 IPv4
+        for url in ipv4_urls:
+            try:
+                out, _ = public.ExecShell(url)
+                if out:
+                    ip = out.strip()
+                    # 验证是否为有效的 IPv4 地址
+                    import re
+                    if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', ip):
+                        ipv4 = ip
+                        break
+            except Exception:
+                continue
+        
+        # 尝试获取 IPv6
+        for url in ipv6_urls:
+            try:
+                out, _ = public.ExecShell(url)
+                if out:
+                    ip = out.strip()
+                    # 验证是否为有效的 IPv6 地址（简化验证）
+                    import re
+                    if re.match(r'^[0-9a-fA-F:]+$', ip) and ':' in ip:
+                        ipv6 = ip
+                        break
+            except Exception:
+                continue
+        
         return {'status': True, 'ipv4': ipv4, 'ipv6': ipv6}
 
     def get_network_interfaces(self, args):
