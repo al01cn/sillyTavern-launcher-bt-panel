@@ -9,6 +9,11 @@
 /* 字体图标 */
 @import url('https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css');
 
+
+.layui-layer-page {
+    min-width: 900px !important;
+}
+
 /* 全局 Button 重置 - 确保自定义按钮样式生效 */
 button.stl-mode-btn {
     background: #fff !important;
