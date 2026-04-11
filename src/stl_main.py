@@ -36,7 +36,7 @@ class stl_main:
     类名必须与文件名（不含 _main 后缀）一致。
     前端通过 plugin?action=a&s=方法名&name=stl 调用。
     """
-
+    __plugin_name = "{{#plugin_title#}}"
     __plugin_path = "/www/server/panel/plugin/{{#plugin_name#}}/"
     __config = None
 
@@ -60,7 +60,21 @@ class stl_main:
                 pass
         
         if not self._yaml_available:
-            public.WriteLog('STL', '警告: PyYAML未安装，酒馆配置管理功能将不可用')
+            self._log('WARN', 'PyYAML未安装，酒馆配置管理功能将不可用')
+
+    def _log(self, level, message, module='核心'):
+        """统一的日志记录辅助函数
+        
+        格式: {plugin_name}({module}) [{level}] {message}
+        
+        参数:
+          - level: 日志级别 (INFO, WARN, ERROR, DEBUG, SUCCESS)
+          - message: 日志内容（保持简短）
+          - module: 模块名称 (核心/PM2/酒馆配置/缓存/扩展管理/资源管理等)
+        """
+        log_prefix = '{}({})'.format(self.__plugin_name, module)
+        formatted_msg = '[{}] {}'.format(level, message)
+        public.WriteLog(log_prefix, formatted_msg)
 
     # 读取配置项(插件自身的配置文件)
     # @param key   取指定配置项，若不传则取所有配置 [可选]
@@ -482,7 +496,7 @@ class stl_main:
         """
         # 检查 yaml 模块是否可用
         if not self._yaml_available:
-            public.WriteLog('SillyTavern', '[WARN] PyYAML 未安装，无法更新白名单配置')
+            self._log('WARN', 'PyYAML未安装，无法更新白名单', '酒馆配置')
             return
         
         import yaml
@@ -495,8 +509,8 @@ class stl_main:
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f) or {}
-        except Exception as e:
-            public.WriteLog('SillyTavern', '[WARN] 读取 config.yaml 失败: ' + str(e))
+        except Exception:
+            self._log('WARN', '读取配置文件失败', '酒馆配置')
             return
         
         # 定义系统预设IP
@@ -506,12 +520,11 @@ class stl_main:
         
         # 获取当前白名单（如果存在）
         current_whitelist = set(config.get('whitelist', []))
-        public.WriteLog('SillyTavern', '[DEBUG] 当前白名单: ' + str(sorted(current_whitelist)))
         
         # 检查是否需要修复（用户可能删除了 127.0.0.1 或 ::1）
         missing_protected_ips = ALWAYS_KEEP_IPS - current_whitelist
         if missing_protected_ips:
-            public.WriteLog('SillyTavern', '[WARN] 检测到受保护IP被删除，正在自动修复: ' + ', '.join(sorted(missing_protected_ips)))
+            self._log('WARN', '受保护IP缺失，自动修复: ' + ', '.join(sorted(missing_protected_ips)), '酒馆配置')
         
         # 判断哪些是用户自定义的IP
         # 用户自定义IP = 当前白名单 - (始终保留的IP + 所有模式预设IP)
@@ -524,20 +537,19 @@ class stl_main:
         if mode == 'wan':
             # 公网模式：回环 + 允许所有IP + 用户自定义
             new_whitelist |= WAN_EXTRA_IPS
-            log_msg = '[INFO] 已切换为公网模式，白名单: 127.0.0.1, ::1, 0.0.0.0/0, ::/0'
+            log_msg = '切换为公网模式'
         else:
             # 局域网模式：回环 + 私有网络 + 用户自定义
             new_whitelist |= LAN_EXTRA_IPS
-            log_msg = '[INFO] 已切换为局域网模式，白名单: 127.0.0.1, ::1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16'
+            log_msg = '切换为局域网模式'
         
         # 添加用户自定义IP
         if user_custom_ips:
             new_whitelist |= user_custom_ips
-            log_msg += '，保留用户自定义IP: ' + ', '.join(sorted(user_custom_ips))
+            log_msg += '，保留自定义IP'
         
         # 转换为列表并排序
         new_whitelist = sorted(list(new_whitelist))
-        public.WriteLog('SillyTavern', '[DEBUG] 新白名单: ' + str(new_whitelist))
         
         # 更新配置
         config['whitelistMode'] = True
@@ -547,9 +559,9 @@ class stl_main:
         try:
             with open(config_file, 'w', encoding='utf-8') as f:
                 yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
-            public.WriteLog('SillyTavern', log_msg)
-        except Exception as e:
-            public.WriteLog('SillyTavern', '[ERROR] 写入 config.yaml 失败: ' + str(e))
+            self._log('INFO', log_msg, '酒馆配置')
+        except Exception:
+            self._log('ERROR', '写入配置文件失败', '酒馆配置')
 
     def _ensure_ecosystem_config(self, app_dir):
         """内部方法：生成/更新 SillyTavern 根目录的 ecosystem.config.cjs
@@ -667,9 +679,8 @@ class stl_main:
         try:
             access_mode = self.__get_config('access_mode') or 'wan'
             self._update_whitelist_by_mode(app_dir, access_mode)
-        except Exception as e:
-            # 配置更新失败不影响启动，只记录日志
-            public.WriteLog('SillyTavern', '[WARN] 更新白名单配置失败: ' + str(e))
+        except Exception:
+            self._log('WARN', '启动时更新白名单失败', '酒馆配置')
 
         # 检查是否已在运行（必须是 online 状态，stopped 状态不算）
         check = public.ExecShell('pm2 jlist')
@@ -696,29 +707,23 @@ class stl_main:
             if accelerate_result['status'] and accelerate_result.get('method') != 'none':
                 method = accelerate_result.get('method', 'unknown')
                 if method == 'interceptor':
-                    log_msg = '[SUCCESS] GitHub URL 拦截器已生成'
-                    public.WriteLog('SillyTavern', log_msg)
-                    github_accelerate_logs.append(log_msg)
+                    self._log('SUCCESS', 'GitHub拦截器已生成', 'PM2')
+                    github_accelerate_logs.append('[SUCCESS] GitHub URL 拦截器已生成')
                     
-                    log_msg = '[INFO] 拦截器文件: ' + accelerate_result.get('file', '')
-                    public.WriteLog('SillyTavern', log_msg)
-                    github_accelerate_logs.append(log_msg)
+                    self._log('INFO', '拦截器: ' + os.path.basename(accelerate_result.get('file', '')), 'PM2')
+                    github_accelerate_logs.append('[INFO] 拦截器文件: ' + accelerate_result.get('file', ''))
                     
-                    log_msg = '[SUCCESS] GitHub URL 拦截器已激活 (将在 PM2 配置中加载)'
-                    public.WriteLog('SillyTavern', log_msg)
-                    github_accelerate_logs.append(log_msg)
+                    self._log('SUCCESS', 'GitHub拦截器已激活', 'PM2')
+                    github_accelerate_logs.append('[SUCCESS] GitHub URL 拦截器已激活 (将在 PM2 配置中加载)')
                 elif method == 'git_proxy':
-                    log_msg = '[SUCCESS] Git 全局代理已设置'
-                    public.WriteLog('SillyTavern', log_msg)
-                    github_accelerate_logs.append(log_msg)
+                    self._log('SUCCESS', 'Git代理已设置', 'PM2')
+                    github_accelerate_logs.append('[SUCCESS] Git 全局代理已设置')
                     
-                    log_msg = '[INFO] 代理地址: ' + accelerate_result.get('url', '')
-                    public.WriteLog('SillyTavern', log_msg)
-                    github_accelerate_logs.append(log_msg)
-        except Exception as e:
-            log_msg = '[WARN] 设置 GitHub 加速失败: ' + str(e)
-            public.WriteLog('SillyTavern', log_msg)
-            github_accelerate_logs.append(log_msg)
+                    self._log('INFO', '代理地址: ' + accelerate_result.get('url', ''), 'PM2')
+                    github_accelerate_logs.append('[INFO] 代理地址: ' + accelerate_result.get('url', ''))
+        except Exception:
+            self._log('WARN', 'GitHub加速设置失败', 'PM2')
+            github_accelerate_logs.append('[WARN] 设置 GitHub 加速失败')
 
         # 确保有 ecosystem.config.cjs
         ecosystem_file = self._ensure_ecosystem_config(app_dir)
@@ -1399,15 +1404,13 @@ class stl_main:
             if key == 'access_mode' and value in ['wan', 'lan']:
                 try:
                     active_path = self.get_active_tavern_path()
-                    public.WriteLog('SillyTavern', '[DEBUG] 切换模式: ' + value + ', 酒馆路径: ' + str(active_path))
                     if active_path:
                         self._update_whitelist_by_mode(active_path, value)
-                        public.WriteLog('SillyTavern', '[SUCCESS] 白名单配置已更新')
+                        self._log('SUCCESS', '白名单已更新', '酒馆配置')
                     else:
-                        public.WriteLog('SillyTavern', '[WARN] 未找到活动的酒馆路径，无法更新白名单')
-                except Exception as e:
-                    # 更新失败不影响配置保存，只记录日志
-                    public.WriteLog('SillyTavern', '[ERROR] 更新白名单配置失败: ' + str(e))
+                        self._log('WARN', '未找到酒馆路径', '酒馆配置')
+                except Exception:
+                    self._log('ERROR', '更新白名单失败', '酒馆配置')
             
             return {'status': True, 'msg': '配置已保存'}
         except Exception as e:
@@ -2385,11 +2388,17 @@ class stl_main:
         """保存 GitHub 加速配置
 
         参数 args:
-          - enabled: 是否启用（布尔）
+          - enabled: 是否启用（布尔或字符串）
           - url: 加速地址（字符串）
         返回: { status, msg }
         """
-        enabled = bool(args.get('enabled', False))
+        # 正确处理 enabled 参数（可能是布尔值或字符串）
+        raw_enabled = args.get('enabled', False)
+        if isinstance(raw_enabled, str):
+            enabled = raw_enabled.lower() in ['true', '1', 'yes']
+        else:
+            enabled = bool(raw_enabled)
+        
         url = (args.get('url') or '').strip()
 
         # URL 合法性校验
@@ -2399,10 +2408,29 @@ class stl_main:
         if url and (len(url) < 12 or '.' not in url):
             return {'status': False, 'msg': '代理地址格式不正确'}
 
+        # 获取旧配置
+        old_config = self.__get_config('github_proxy') or {}
+        old_enabled = old_config.get('enabled', False)
+        
+        # 保存新配置
         self.__set_config('github_proxy', {
             'enabled': enabled,
             'url': url or 'https://ghfast.top/'
         })
+        
+        self._log('INFO', 'GitHub加速: {} -> {}'.format('启用' if old_enabled else '禁用', '启用' if enabled else '禁用'), 'PM2')
+        
+        # 如果从启用变为禁用，清理所有实例的加速设置
+        if old_enabled and not enabled:
+            try:
+                # 清理当前活动实例
+                active_path = self.get_active_tavern_path()
+                if active_path:
+                    self.cleanup_github_accelerate_for_instance({'instance_path': active_path})
+                    self._log('SUCCESS', '已清理GitHub加速设置', 'PM2')
+            except Exception:
+                # 清理失败不影响配置保存
+                pass
 
         return {
             'status': True,
@@ -2435,6 +2463,7 @@ class stl_main:
         
         # 如果未启用加速，直接返回
         if not enabled:
+            self._log('DEBUG', 'GitHub加速未启用，跳过设置', 'PM2')
             return {'status': True, 'msg': 'GitHub 加速未启用', 'method': 'none'}
         
         # 检测 Node.js 版本
@@ -2621,8 +2650,12 @@ class stl_main:
         if os.path.exists(interceptor_file):
             try:
                 os.remove(interceptor_file)
-            except Exception as e:
-                return {'status': False, 'msg': '删除拦截器文件失败: ' + str(e)}
+                self._log('INFO', '已删除拦截器文件', 'PM2')
+            except Exception:
+                self._log('WARN', '删除拦截器文件失败', 'PM2')
+                return {'status': False, 'msg': '删除拦截器文件失败'}
+        else:
+            self._log('DEBUG', '拦截器文件不存在，无需清理', 'PM2')
         
         # 清理 Git 全局配置
         proxy_config = self.__get_config('github_proxy') or {}
