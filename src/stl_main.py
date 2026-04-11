@@ -1652,6 +1652,25 @@ class stl_main:
                 # 在线安装默认位置，将配置置空
                 if install_path == sillyTavern_path:
                     self.__set_config('sillytavern_path', '')
+                
+                # 读取实际安装的版本号
+                import re
+                version = ''
+                pkg_file = os.path.join(install_path, 'package.json')
+                if os.path.isfile(pkg_file):
+                    try:
+                        content = public.ReadFile(pkg_file)
+                        if content:
+                            match = re.search(r'"version"\s*:\s*"([^"]+)"', content)
+                            if match:
+                                version = match.group(1)
+                                _write_line('[INFO] 检测到版本: v' + version)
+                    except Exception as e:
+                        _write_line('[WARN] 读取版本号失败: ' + str(e))
+                
+                # 为全新实例生成优化过的 settings.json（传入版本号）
+                self._generate_default_settings(install_path, _write_line, version)
+                
                 _write_line('========================================')
 
             except Exception as e:
@@ -2950,6 +2969,27 @@ class stl_main:
         # 检查并安装依赖
         deps_check = self._check_and_install_deps(target['path'])
         if deps_check['status']:
+            # 依赖安装成功，尝试生成 settings.json
+            try:
+                # 读取版本号
+                import re
+                version = ''
+                pkg_file = os.path.join(target['path'], 'package.json')
+                if os.path.isfile(pkg_file):
+                    content = public.ReadFile(pkg_file)
+                    if content:
+                        match = re.search(r'"version"\s*:\s*"([^"]+)"', content)
+                        if match:
+                            version = match.group(1)
+                
+                # 生成 settings.json（如果不存在）
+                def dummy_log(msg):
+                    pass  # 静默模式，不输出日志
+                
+                self._generate_default_settings(target['path'], dummy_log, version)
+            except Exception as e:
+                pass  # 即使生成失败也不影响依赖安装的结果
+            
             return {'status': True, 'msg': '依赖安装成功'}
         else:
             return {'status': False, 'msg': deps_check.get('msg', '依赖安装失败')}
@@ -3034,12 +3074,50 @@ class stl_main:
                     f.write('\n[ERROR] 依赖安装失败，退出码: {}\n'.format(proc.returncode))
                 f.flush()
 
-            # 删除锁文件，表示安装完成
+            # 检查安装结果
+            node_modules = os.path.join(target['path'], 'node_modules')
+            if os.path.exists(node_modules):
+                # 依赖安装成功，尝试生成 settings.json
+                try:
+                    # 读取版本号
+                    import re
+                    version = ''
+                    pkg_file = os.path.join(target['path'], 'package.json')
+                    if os.path.isfile(pkg_file):
+                        content = public.ReadFile(pkg_file)
+                        if content:
+                            match = re.search(r'"version"\s*:\s*"([^"]+)"', content)
+                            if match:
+                                version = match.group(1)
+                    
+                    # 生成 settings.json（如果不存在）- 输出到日志文件
+                    def log_to_file(msg):
+                        try:
+                            with open(log_file, 'a', encoding='utf-8') as f:
+                                f.write(msg + '\n')
+                                f.flush()
+                        except Exception:
+                            pass
+                    
+                    self._generate_default_settings(target['path'], log_to_file, version)
+                except Exception as e:
+                    # 即使生成失败也记录日志
+                    try:
+                        with open(log_file, 'a', encoding='utf-8') as f:
+                            f.write('[WARN] 生成 settings.json 时出错: ' + str(e) + '\n')
+                            f.flush()
+                    except Exception:
+                        pass
+            
+            # 等待一小段时间，确保日志完全写入
+            import time
+            time.sleep(0.3)
+            
+            # 删除锁文件，表示安装完成（必须在生成 settings.json 之后）
             if os.path.exists(lock_file):
                 os.remove(lock_file)
 
-            # 检查安装结果
-            node_modules = os.path.join(target['path'], 'node_modules')
+            # 返回结果
             if os.path.exists(node_modules):
                 return {'status': True, 'msg': '依赖安装成功', 'log_file': log_file}
             else:
@@ -3456,6 +3534,27 @@ class stl_main:
 
             # 检查安装结果
             if os.path.exists(node_modules):
+                # 依赖安装成功，尝试生成 settings.json
+                try:
+                    # 读取版本号
+                    import re
+                    version = ''
+                    pkg_file = os.path.join(st_path, 'package.json')
+                    if os.path.isfile(pkg_file):
+                        content = public.ReadFile(pkg_file)
+                        if content:
+                            match = re.search(r'"version"\s*:\s*"([^"]+)"', content)
+                            if match:
+                                version = match.group(1)
+                    
+                    # 生成 settings.json（如果不存在）
+                    def dummy_log(msg):
+                        pass  # 静默模式，不输出日志
+                    
+                    self._generate_default_settings(st_path, dummy_log, version)
+                except Exception as e:
+                    pass  # 即使生成失败也不影响依赖安装的结果
+                
                 return {'status': True, 'installed': True, 'msg': '依赖安装成功'}
             else:
                 return {'status': False, 'installed': False, 'msg': '依赖安装完成但 node_modules 未生成'}
@@ -4270,12 +4369,78 @@ class stl_main:
 
     # ==================== 资源管理 ====================
     # SillyTavern 数据目录结构: {酒馆路径}/data/default-user/{characters,worlds,chats}
-    # 对应 PC 端"使用酒馆数据"模式
-
+    # 对应 PC 端“使用酒馆数据”模式
+    
+    def _generate_default_settings(self, install_path, log_callback=None, version=''):
+        """为全新 SillyTavern 实例生成优化过的 settings.json
+            
+        只有在目标位置不存在 settings.json 时才会生成，防止覆盖用户设置。
+        自动将 currentVersion 字段设置为实际安装的版本号。
+            
+        Args:
+            install_path: SillyTavern 安装路径
+            log_callback: 日志回调函数（可选）
+            version: 实际安装的版本号（可选），如果提供则更新 currentVersion 字段
+        """
+        import shutil
+            
+        try:
+            # 构建 settings.json 的目标路径
+            data_dir = os.path.join(install_path, 'data', 'default-user')
+            settings_file = os.path.join(data_dir, 'settings.json')
+                
+            # 如果文件已存在，不覆盖
+            if os.path.exists(settings_file):
+                if log_callback:
+                    log_callback('[INFO] settings.json 已存在，跳过生成')
+                return
+                
+            # 确保目录存在
+            if not os.path.exists(data_dir):
+                os.makedirs(data_dir, 0o755)
+                if log_callback:
+                    log_callback('[INFO] 创建数据目录: ' + data_dir)
+                
+            # 复制模板文件
+            template_path = os.path.join(self.__plugin_path, 'static', 'json', 'settings.json')
+            if not os.path.exists(template_path):
+                if log_callback:
+                    log_callback('[WARN] 模板文件不存在: ' + template_path)
+                return
+            
+            # 读取模板内容
+            with open(template_path, 'r', encoding='utf-8') as f:
+                import json
+                settings_data = json.load(f)
+            
+            # 如果提供了版本号，更新 currentVersion 字段
+            if version:
+                settings_data['currentVersion'] = version
+                if log_callback:
+                    log_callback('[INFO] 设置 currentVersion: ' + version)
+            
+            # 写入 settings.json
+            with open(settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings_data, f, indent=4, ensure_ascii=False)
+            
+            if log_callback:
+                log_callback('[SUCCESS] 已生成优化过的 settings.json')
+                log_callback('[INFO] 模板来源: /{{#plugin_name#}}/static/json/settings.json')
+                log_callback('[INFO] 目标位置: ' + settings_file)
+            
+        except Exception as e:
+            import traceback
+            error_msg = '[ERROR] 生成 settings.json 失败: ' + str(e)
+            if log_callback:
+                log_callback(error_msg)
+                log_callback(traceback.format_exc())
+            # 不抛出异常，避免影响主安装流程
+    
     def _get_st_data_path(self):
         """获取 SillyTavern 用户数据目录（酒馆安装目录下的 data/default-user）"""
+        # 优先使用 sillytavern_path（当前激活的路径），如果为空则使用默认路径
         config = self.__get_config()
-        st_path = config.get('st_path', sillyTavern_path)
+        st_path = config.get('sillytavern_path', '') or sillyTavern_path
         return os.path.join(st_path, 'data', 'default-user')
 
     def _safe_filename(self, filename):
@@ -4954,6 +5119,16 @@ class stl_main:
                 try:
                     os.remove(fpath)
                     deleted.append(f'{safe_folder}/{safe_name}')
+                    
+                    # 检查目录是否为空，如果为空则删除目录
+                    folder_path = os.path.join(chats_dir, safe_folder)
+                    if os.path.exists(folder_path) and os.path.isdir(folder_path):
+                        if not os.listdir(folder_path):  # 目录为空
+                            try:
+                                os.rmdir(folder_path)
+                                print(f'[DEBUG] 删除空目录: {folder_path}')
+                            except Exception as e:
+                                print(f'[DEBUG] 删除空目录失败: {str(e)}')
                 except Exception as e:
                     errors.append(f'{safe_folder}/{safe_name}: {str(e)}')
             else:
@@ -4963,6 +5138,38 @@ class stl_main:
         if errors:
             msg += f'，失败 {len(errors)} 个'
         return {'status': True, 'msg': msg, 'deleted': deleted, 'errors': errors}
+
+    def delete_chat_folder(self, args):
+        """删除对话分组目录（用于删除空分组）"""
+        folder = args.get('folder', '')
+        
+        if not folder:
+            return {'status': False, 'msg': '缺少目录名'}
+        
+        safe_folder = self._safe_filename(folder)
+        if not safe_folder:
+            return {'status': False, 'msg': '非法路径'}
+        
+        base_path = self._get_st_data_path()
+        chats_dir = os.path.join(base_path, 'chats')
+        folder_path = os.path.join(chats_dir, safe_folder)
+        
+        if not os.path.exists(folder_path):
+            return {'status': True, 'msg': '目录不存在或已删除'}
+        
+        if not os.path.isdir(folder_path):
+            return {'status': False, 'msg': '路径不是目录'}
+        
+        # 检查目录是否为空
+        if os.listdir(folder_path):
+            return {'status': False, 'msg': '目录不为空，无法删除'}
+        
+        try:
+            os.rmdir(folder_path)
+            print(f'[DEBUG] 删除对话分组目录: {folder_path}')
+            return {'status': True, 'msg': f'已删除分组目录: {safe_folder}'}
+        except Exception as e:
+            return {'status': False, 'msg': f'删除失败: {str(e)}'}
 
     def get_resource_stats(self, args):
         """获取资源统计信息"""

@@ -66,14 +66,32 @@ var ExtensionsPage = {
     },
 
     loadVersions: function() {
-        request_plugin('get_installed_versions_info', {}, (rdata) => {
-            if (rdata.status && rdata.data && rdata.data.length > 0) {
-                this.selectedVersion = rdata.data[0];
-                $('#ext-current-version').text(this.selectedVersion.version || '未知版本');
-                this.refresh();
-            } else {
-                $('#ext-current-version').text('未检测到已安装的版本');
-            }
+        var self = this;
+        
+        // 先获取当前激活的酒馆路径
+        request_plugin('get_current_tavern_path', {}, function(pathData) {
+            var currentPath = pathData.status ? (pathData.path || '') : '';
+            
+            request_plugin('get_installed_versions_info', {}, (rdata) => {
+                if (rdata.status && rdata.data && rdata.data.length > 0) {
+                    // 根据当前激活路径选择版本
+                    var selected = null;
+                    if (currentPath) {
+                        // 如果有自定义路径，查找匹配的
+                        selected = rdata.data.find(v => v.path === currentPath);
+                    }
+                    // 如果没有找到或路径为空，使用第一个（默认在线版本）
+                    if (!selected) {
+                        selected = rdata.data[0];
+                    }
+                    
+                    self.selectedVersion = selected;
+                    $('#ext-current-version').text(self.selectedVersion.version || '未知版本');
+                    self.refresh();
+                } else {
+                    $('#ext-current-version').text('未检测到已安装的版本');
+                }
+            });
         });
     },
 

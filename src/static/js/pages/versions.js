@@ -431,7 +431,7 @@ function doInstallDeps(instanceId) {
                                 layer.close(logIndex);
                                 layer.msg('依赖安装成功', { icon: 1 });
                                 loadLocalInstances();
-                            }, 1500);
+                            }, 3000);  // 增加到 3 秒，让用户看清 settings.json 生成日志
                         }
                     }
                 });
@@ -793,7 +793,7 @@ function installLatestVersion() {
                             layer.close(logIndex);
                             layer.msg('安装成功！', { icon: 1 });
                             loadOnlineInstallCard();
-                        }, 1500);
+                        }, 3000);  // 增加到 3 秒，让用户看清 settings.json 生成日志
                     } else {
                         appendLog('[ERROR] ' + result.msg, 'error');
                         // 安装失败时允许关闭

@@ -790,24 +790,64 @@ var ResourcesPage = (function() {
     // ========== 删除操作 ==========
     
     function deleteOne(filename) {
-        layer.confirm(
-            '<div style="text-align:center;padding:15px 0;">' +
-                '<i class="bi bi-exclamation-triangle" style="font-size:48px;color:#f0ad4e;margin-bottom:15px;"></i>' +
-                '<p style="font-size:14px;">确定要删除 <strong>' + filename + '</strong> 吗？</p>' +
-                '<p style="font-size:12px;color:#999;">此操作不可恢复</p>' +
+        // 第一层确认
+        var confirmIndex = layer.confirm(
+            '<div class="stl-delete-confirm">' +
+                '<div class="stl-confirm-icon stl-confirm-icon-warning">' +
+                    '<i class="bi bi-exclamation-triangle"></i>' +
+                '</div>' +
+                '<div class="stl-confirm-content">' +
+                    '<div class="stl-confirm-title">确认删除</div>' +
+                    '<div class="stl-confirm-message">确定要删除 <strong>' + filename + '</strong> 吗？</div>' +
+                    '<div class="stl-confirm-info">' +
+                        '<span class="stl-confirm-info-item"><i class="bi bi-file-earmark"></i> ' + 
+                        (state.activeTab === 'characters' ? '角色卡' : '世界书') + '</span>' +
+                    '</div>' +
+                    '<div class="stl-confirm-warning">此操作不可恢复</div>' +
+                '</div>' +
             '</div>',
-            { title: '确认删除', btn: ['下一步', '取消'], icon: 0, skin: 'stl-confirm-modal' },
+            { 
+                title: '确认删除', 
+                btn: ['下一步', '取消'], 
+                area: ['420px', 'auto'],
+                icon: -1, 
+                skin: 'stl-confirm-modal stl-confirm-delete',
+                success: function(layero, index) {
+                    // 弹窗打开后立即移除 Layer 默认图标
+                    setTimeout(function() {
+                        layero.find('.layui-layer-ico').remove();
+                        layero.find('span[class*="layui-layer-ico"]').remove();
+                    }, 0);
+                }
+            },
             function(index) {
-                // 第一次确认，显示二次确认
                 layer.close(index);
-                layer.confirm(
-                    '<div style="text-align:center;padding:15px 0;">' +
-                        '<i class="bi bi-exclamation-circle" style="font-size:48px;color:#dc3545;margin-bottom:15px;"></i>' +
-                        '<p style="font-size:14px;font-weight:bold;">再次确认</p>' +
-                        '<p style="font-size:13px;">真的要删除 <strong>' + filename + '</strong> 吗？</p>' +
-                        '<p style="font-size:12px;color:#999;">此操作无法撤销！</p>' +
+                // 第二层确认
+                var confirmIndex2 = layer.confirm(
+                    '<div class="stl-delete-confirm">' +
+                        '<div class="stl-confirm-icon stl-confirm-icon-danger">' +
+                            '<i class="bi bi-exclamation-circle"></i>' +
+                        '</div>' +
+                        '<div class="stl-confirm-content">' +
+                            '<div class="stl-confirm-title stl-confirm-title-danger">最终确认</div>' +
+                            '<div class="stl-confirm-message">真的要删除 <strong>' + filename + '</strong> 吗？</div>' +
+                            '<div class="stl-confirm-tip"><i class="bi bi-info-circle"></i> 该文件将被永久删除</div>' +
+                            '<div class="stl-confirm-warning">此操作无法撤销！</div>' +
+                        '</div>' +
                     '</div>',
-                    { title: '最终确认', btn: ['确定删除', '再想想'], icon: 0, skin: 'stl-confirm-modal' },
+                    { 
+                        title: '最终确认', 
+                        btn: ['确定删除', '再想想'], 
+                        area: ['420px', 'auto'],
+                        icon: -1, 
+                        skin: 'stl-confirm-modal stl-confirm-delete',
+                        success: function(layero, index) {
+                            setTimeout(function() {
+                                layero.find('.layui-layer-ico').remove();
+                                layero.find('span[class*="layui-layer-ico"]').remove();
+                            }, 0);
+                        }
+                    },
                     function(index2) {
                         layer.close(index2);
                         // 根据当前标签页调用不同的删除函数
@@ -826,23 +866,68 @@ var ResourcesPage = (function() {
         var group = state.chatGroups.find(function(g) { return g.folder === folder; });
         if (!group) return;
         
+        var recordCount = group.files.length;
+        
+        // 第一层确认
         layer.confirm(
-            '<div style="text-align:center;padding:15px 0;">' +
-                '<i class="bi bi-exclamation-triangle" style="font-size:48px;color:#f0ad4e;margin-bottom:15px;"></i>' +
-                '<p style="font-size:14px;">确定要删除角色 <strong>' + group.char_name + '</strong> 的全部对话记录吗？</p>' +
-                '<p style="font-size:12px;color:#999;">共 ' + group.files.length + ' 条记录，此操作不可恢复</p>' +
+            '<div class="stl-delete-confirm">' +
+                '<div class="stl-confirm-icon stl-confirm-icon-warning">' +
+                    '<i class="bi bi-exclamation-triangle"></i>' +
+                '</div>' +
+                '<div class="stl-confirm-content">' +
+                    '<div class="stl-confirm-title">确认删除角色对话记录</div>' +
+                    '<div class="stl-confirm-message">确定要删除角色 <strong>' + group.char_name + '</strong> 的全部对话记录吗？</div>' +
+                    '<div class="stl-confirm-info">' +
+                        '<span class="stl-confirm-info-item"><i class="bi bi-chat-left-text"></i> ' + recordCount + ' 条对话记录</span>' +
+                        '<span class="stl-confirm-info-item"><i class="bi bi-folder"></i> 分组目录：' + group.folder + '</span>' +
+                    '</div>' +
+                    '<div class="stl-confirm-warning">此操作不可恢复，删除后将无法找回</div>' +
+                '</div>' +
             '</div>',
-            { title: '确认删除', btn: ['下一步', '取消'], icon: 0, skin: 'stl-confirm-modal' },
+            { 
+                title: '确认删除', 
+                btn: ['下一步', '取消'], 
+                area: ['420px', 'auto'],
+                icon: -1, 
+                skin: 'stl-confirm-modal stl-confirm-delete',
+                success: function(layero, index) {
+                    setTimeout(function() {
+                        layero.find('.layui-layer-ico').remove();
+                        layero.find('span[class*="layui-layer-ico"]').remove();
+                    }, 0);
+                }
+            },
             function(index) {
                 layer.close(index);
+                // 第二层确认
                 layer.confirm(
-                    '<div style="text-align:center;padding:15px 0;">' +
-                        '<i class="bi bi-exclamation-circle" style="font-size:48px;color:#dc3545;margin-bottom:15px;"></i>' +
-                        '<p style="font-size:14px;font-weight:bold;">再次确认</p>' +
-                        '<p style="font-size:13px;">真的要删除 <strong>' + group.char_name + '</strong> 的全部 ' + group.files.length + ' 条对话记录吗？</p>' +
-                        '<p style="font-size:12px;color:#999;">此操作无法撤销！</p>' +
+                    '<div class="stl-delete-confirm">' +
+                        '<div class="stl-confirm-icon stl-confirm-icon-danger">' +
+                            '<i class="bi bi-exclamation-circle"></i>' +
+                        '</div>' +
+                        '<div class="stl-confirm-content">' +
+                            '<div class="stl-confirm-title stl-confirm-title-danger">最终确认</div>' +
+                            '<div class="stl-confirm-message">真的要删除角色 <strong>' + group.char_name + '</strong> 的全部 <strong>' + recordCount + '</strong> 条对话记录吗？</div>' +
+                            '<div class="stl-confirm-tip">' +
+                                '<i class="bi bi-info-circle"></i> ' +
+                                (recordCount === 0 ? '该分组目录也将被删除' : '所有对话文件及分组目录将被永久删除') +
+                            '</div>' +
+                            '<div class="stl-confirm-warning">此操作无法撤销！</div>' +
+                        '</div>' +
                     '</div>',
-                    { title: '最终确认', btn: ['确定删除', '再想想'], icon: 0, skin: 'stl-confirm-modal' },
+                    { 
+                        title: '最终确认', 
+                        btn: ['确定删除', '再想想'], 
+                        area: ['420px', 'auto'],
+                        icon: -1, 
+                        skin: 'stl-confirm-modal stl-confirm-delete',
+                        success: function(layero, index) {
+                            setTimeout(function() {
+                                layero.find('.layui-layer-ico').remove();
+                                layero.find('span[class*="layui-layer-ico"]').remove();
+                            }, 0);
+                        }
+                    },
                     function(index2) {
                         layer.close(index2);
                         doDeleteGroup(folder);
@@ -853,23 +938,50 @@ var ResourcesPage = (function() {
     }
     
     function deleteChat(folder, filename) {
+        // 第一层确认
         layer.confirm(
-            '<div style="text-align:center;padding:15px 0;">' +
-                '<i class="bi bi-exclamation-triangle" style="font-size:48px;color:#f0ad4e;margin-bottom:15px;"></i>' +
-                '<p style="font-size:14px;">确定要删除对话记录 <strong>' + filename + '</strong> 吗？</p>' +
-                '<p style="font-size:12px;color:#999;">此操作不可恢复</p>' +
+            '<div class="stl-delete-confirm">' +
+                '<div class="stl-confirm-icon stl-confirm-icon-warning">' +
+                    '<i class="bi bi-exclamation-triangle"></i>' +
+                '</div>' +
+                '<div class="stl-confirm-content">' +
+                    '<div class="stl-confirm-title">确认删除对话记录</div>' +
+                    '<div class="stl-confirm-message">确定要删除对话记录 <strong>' + filename + '</strong> 吗？</div>' +
+                    '<div class="stl-confirm-info">' +
+                        '<span class="stl-confirm-info-item"><i class="bi bi-folder"></i> 分组：' + folder + '</span>' +
+                    '</div>' +
+                    '<div class="stl-confirm-warning">此操作不可恢复</div>' +
+                '</div>' +
             '</div>',
-            { title: '确认删除', btn: ['下一步', '取消'], icon: 0, skin: 'stl-confirm-modal' },
+            { 
+                title: '确认删除', 
+                btn: ['下一步', '取消'], 
+                area: ['420px', 'auto'],
+                icon: -1, 
+                skin: 'stl-confirm-modal stl-confirm-delete' 
+            },
             function(index) {
                 layer.close(index);
+                // 第二层确认
                 layer.confirm(
-                    '<div style="text-align:center;padding:15px 0;">' +
-                        '<i class="bi bi-exclamation-circle" style="font-size:48px;color:#dc3545;margin-bottom:15px;"></i>' +
-                        '<p style="font-size:14px;font-weight:bold;">再次确认</p>' +
-                        '<p style="font-size:13px;">真的要删除对话记录 <strong>' + filename + '</strong> 吗？</p>' +
-                        '<p style="font-size:12px;color:#999;">此操作无法撤销！</p>' +
+                    '<div class="stl-delete-confirm">' +
+                        '<div class="stl-confirm-icon stl-confirm-icon-danger">' +
+                            '<i class="bi bi-exclamation-circle"></i>' +
+                        '</div>' +
+                        '<div class="stl-confirm-content">' +
+                            '<div class="stl-confirm-title stl-confirm-title-danger">最终确认</div>' +
+                            '<div class="stl-confirm-message">真的要删除对话记录 <strong>' + filename + '</strong> 吗？</div>' +
+                            '<div class="stl-confirm-tip"><i class="bi bi-info-circle"></i> 该文件将被永久删除</div>' +
+                            '<div class="stl-confirm-warning">此操作无法撤销！</div>' +
+                        '</div>' +
                     '</div>',
-                    { title: '最终确认', btn: ['确定删除', '再想想'], icon: 0, skin: 'stl-confirm-modal' },
+                    { 
+                        title: '最终确认', 
+                        btn: ['确定删除', '再想想'], 
+                        area: ['420px', 'auto'],
+                        icon: -1, 
+                        skin: 'stl-confirm-modal stl-confirm-delete' 
+                    },
                     function(index2) {
                         layer.close(index2);
                         doDeleteChats([{ folder: folder, file_name: filename }]);
@@ -883,24 +995,46 @@ var ResourcesPage = (function() {
         var count = Object.keys(state.selected).filter(function(k) { return state.selected[k]; }).length;
         if (count === 0) return;
         
+        // 第一层确认
         layer.confirm(
-            '<div style="text-align:center;padding:15px 0;">' +
-                '<i class="bi bi-exclamation-triangle" style="font-size:48px;color:#f0ad4e;margin-bottom:15px;"></i>' +
-                '<p style="font-size:14px;">确定要删除选中的 <strong>' + count + '</strong> 项资源吗？</p>' +
-                '<p style="font-size:12px;color:#999;">此操作不可恢复</p>' +
+            '<div class="stl-delete-confirm">' +
+                '<div class="stl-confirm-icon stl-confirm-icon-warning">' +
+                    '<i class="bi bi-exclamation-triangle"></i>' +
+                '</div>' +
+                '<div class="stl-confirm-content">' +
+                    '<div class="stl-confirm-title">确认批量删除</div>' +
+                    '<div class="stl-confirm-message">确定要删除选中的 <strong>' + count + '</strong> 项资源吗？</div>' +
+                    '<div class="stl-confirm-warning">此操作不可恢复</div>' +
+                '</div>' +
             '</div>',
-            { title: '确认删除', btn: ['下一步', '取消'], icon: 0, skin: 'stl-confirm-modal' },
+            { 
+                title: '确认删除', 
+                btn: ['下一步', '取消'], 
+                area: ['420px', 'auto'],
+                icon: -1, 
+                skin: 'stl-confirm-modal stl-confirm-delete' 
+            },
             function(index) {
-                // 第一次确认，显示二次确认
                 layer.close(index);
+                // 第二层确认
                 layer.confirm(
-                    '<div style="text-align:center;padding:15px 0;">' +
-                        '<i class="bi bi-exclamation-circle" style="font-size:48px;color:#dc3545;margin-bottom:15px;"></i>' +
-                        '<p style="font-size:14px;font-weight:bold;">再次确认</p>' +
-                        '<p style="font-size:13px;">真的要删除选中的 <strong>' + count + '</strong> 项资源吗？</p>' +
-                        '<p style="font-size:12px;color:#999;">此操作无法撤销！</p>' +
+                    '<div class="stl-delete-confirm">' +
+                        '<div class="stl-confirm-icon stl-confirm-icon-danger">' +
+                            '<i class="bi bi-exclamation-circle"></i>' +
+                        '</div>' +
+                        '<div class="stl-confirm-content">' +
+                            '<div class="stl-confirm-title stl-confirm-title-danger">最终确认</div>' +
+                            '<div class="stl-confirm-message">真的要删除选中的 <strong>' + count + '</strong> 项资源吗？</div>' +
+                            '<div class="stl-confirm-warning">此操作无法撤销！</div>' +
+                        '</div>' +
                     '</div>',
-                    { title: '最终确认', btn: ['确定删除', '再想想'], icon: 0, skin: 'stl-confirm-modal' },
+                    { 
+                        title: '最终确认', 
+                        btn: ['确定删除', '再想想'], 
+                        area: ['420px', 'auto'],
+                        icon: -1, 
+                        skin: 'stl-confirm-modal stl-confirm-delete' 
+                    },
                     function(index2) {
                         layer.close(index2);
                         
@@ -1003,6 +1137,23 @@ var ResourcesPage = (function() {
         var chats = group.files.map(function(f) {
             return { folder: folder, file_name: f.file_name };
         });
+        
+        // 如果分组已经有 0 条记录，直接请求删除空目录
+        if (chats.length === 0) {
+            request_plugin('delete_chat_folder', { folder: folder }, function(res) {
+                layer.close(loading);
+                if (res.status) {
+                    layer.msg(res.msg, { icon: 1 });
+                    if (state.batchMode) {
+                        toggleBatchMode(false);
+                    }
+                    refresh();
+                } else {
+                    layer.msg(res.msg || '删除失败', { icon: 2 });
+                }
+            });
+            return;
+        }
         
         request_plugin('delete_chats', { folders: JSON.stringify(chats) }, function(res) {
             layer.close(loading);

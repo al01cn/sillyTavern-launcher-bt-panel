@@ -3590,6 +3590,170 @@ button.stl-proxy-btn i {
     color: #666 !important;
 }
 
+/* 删除确认弹窗样式 */
+.stl-confirm-delete .layui-layer-content {
+    padding: 0 !important;
+}
+
+/* 强制隐藏 Layer 默认图标 - 覆盖所有可能的选择器组合 */
+.layui-layer.stl-confirm-delete span.layui-layer-ico,
+.layui-layer.stl-confirm-delete span.layui-layer-ico0,
+.layui-layer.stl-confirm-delete span.layui-layer-ico1,
+.layui-layer.stl-confirm-delete span.layui-layer-ico2,
+.layui-layer.stl-confirm-delete span.layui-layer-ico3,
+body .layui-layer.stl-confirm-delete .layui-layer-ico,
+body .layui-layer.stl-confirm-delete span[class*="layui-layer-ico"],
+.layui-layer-dialog.stl-confirm-delete .layui-layer-ico,
+.layui-layer-page.stl-confirm-delete .layui-layer-ico,
+.layui-layer.stl-confirm-delete > .layui-layer-ico,
+.layui-layer.stl-confirm-delete div.layui-layer-ico {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+}
+
+/* 确保内容区域左对齐且无默认图标占位 */
+.layui-layer.stl-confirm-delete .layui-layer-content {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    text-align: left !important;
+}
+
+.layui-layer.stl-confirm-delete .layui-layer-content > div:first-child {
+    text-align: left !important;
+}
+
+.stl-delete-confirm {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    gap: 16px;
+    padding: 20px;
+    text-align: left !important;
+}
+
+.stl-confirm-icon {
+    flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+}
+
+.stl-confirm-icon-warning {
+    background: #fff7e6;
+    color: #fa8c16;
+}
+
+.stl-confirm-icon-danger {
+    background: #fff2f0;
+    color: #ff4d4f;
+}
+
+.stl-confirm-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.stl-confirm-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 10px;
+    line-height: 1.4;
+}
+
+.stl-confirm-title-danger {
+    color: #ff4d4f;
+}
+
+.stl-confirm-message {
+    font-size: 14px;
+    color: #555;
+    line-height: 1.6;
+    margin-bottom: 12px;
+}
+
+.stl-confirm-message strong {
+    color: #333;
+    font-weight: 600;
+}
+
+.stl-confirm-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    background: #f7f8fa;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.stl-confirm-info-item {
+    font-size: 13px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stl-confirm-info-item i {
+    font-size: 14px;
+    color: #999;
+}
+
+.stl-confirm-tip {
+    font-size: 13px;
+    color: #666;
+    padding: 8px 12px;
+    background: #f0f7ff;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stl-confirm-tip i {
+    color: #1890ff;
+}
+
+.stl-confirm-warning {
+    font-size: 12px;
+    color: #ff4d4f;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stl-confirm-warning::before {
+    content: '!';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ff4d4f;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+}
+
 /* 导入弹窗 */
 .stl-import-modal {
     max-width: 500px;
