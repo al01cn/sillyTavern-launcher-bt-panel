@@ -4,14 +4,23 @@
 宝塔插件打包脚本
 
 用法:
-    python pack.py                # 默认打包
-    python pack.py --version 1.1  # 指定版本号打包
+    python pack.py                              # 默认打包 (dev)
+    python pack.py --type dev                   # 开发版打包
+    python pack.py --type beta                  # 测试版打包
+    python pack.py --type release               # 正式版打包
+    python pack.py --version 1.1                # 指定版本号打包
+    python pack.py --version 2.0 --type beta    # 组合使用
 
 流程:
     1. 从 package.json 读取插件信息
     2. 读取 src/ 源码，替换占位符 {{#plugin_xxx#}}
     3. 生成 info.json（从 package.json 直接构建）
-    4. 打包到 dist/zip，不修改 src/ 任何文件
+    4. 根据构建类型输出到不同目录，不修改 src/ 任何文件
+
+构建类型:
+    - dev (默认): 输出到 dist/dev/，压缩包名加 dev_ 前缀，title 加 [开发版]，添加 is_beta: true
+    - beta: 输出到 dist/beta/，压缩包名加 beta_ 前缀，title 加 [测试版]，添加 is_beta: true
+    - release: 输出到 dist/release/，保持原始配置，无任何修改
 
 占位符语法: {{#plugin_xxx#}}，字段名以 plugin_ 前缀直观命名，
 通过 PLACEHOLDER_MAP 映射到 package.json 中的键。
@@ -78,7 +87,7 @@ def replace_placeholders(content, variables):
 
 def build_info_json(variables):
     """构建 info.json 内容（从 package.json 提取宝塔需要的字段）"""
-    bt_fields = ["title", "name", "ps", "versions", "checks", "author", "home", "sort", "icon", "coexist"]
+    bt_fields = ["title", "name", "ps", "versions", "checks", "author", "home", "sort", "icon", "coexist", "is_beta"]
     info = {}
     for field in bt_fields:
         if field in variables:
@@ -120,24 +129,55 @@ def pack(args):
     # 1. 从 package.json 读取信息
     pkg_info = load_package_json()
 
-    # 2. 构建替换变量
+    # 2. 确定构建类型（默认 dev）
+    build_type = args.type if args.type else 'dev'
+    
+    # 3. 构建替换变量
     variables = dict(pkg_info)
     if args.version:
         variables["versions"] = args.version
 
-    plugin_name = variables.get("name", "demo")
-    version = variables.get("versions", "1.0")
+    plugin_name = variables.get("name", "stl")
+    version = variables.get("versions", "0.1")
+    original_title = variables.get("title", "酒馆启动器")
+
+    # 4. 根据构建类型调整配置
+    if build_type == 'dev':
+        output_dir = os.path.join(DIST_DIR, 'dev')
+        version_prefix = 'dev_'
+        title_suffix = '[开发版]'
+        variables['is_beta'] = True  # 告诉面板这是测试版本
+        print(f"[打包] 构建类型: 开发版 (dev)")
+    elif build_type == 'beta':
+        output_dir = os.path.join(DIST_DIR, 'beta')
+        version_prefix = 'beta_'
+        title_suffix = '[测试版]'
+        variables['is_beta'] = True  # 告诉面板这是测试版本
+        print(f"[打包] 构建类型: 测试版 (beta)")
+    else:  # release
+        output_dir = os.path.join(DIST_DIR, 'release')
+        version_prefix = ''
+        title_suffix = ''
+        print(f"[打包] 构建类型: 正式版 (release)")
+
+    # 5. 修改标题（如果需要）
+    if title_suffix:
+        variables['title'] = f"{original_title}{title_suffix}"
 
     print(f"[打包] 插件名称: {plugin_name}")
     print(f"[打包] 版本号: {version}")
+    print(f"[打包] 输出目录: {os.path.relpath(output_dir, BASE_DIR)}")
     print("=" * 40)
 
-    # 3. 清理 dist
-    clear_dist()
+    # 6. 清理并创建当前类型的输出目录
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"[信息] 已准备输出目录: {os.path.relpath(output_dir, BASE_DIR)}")
 
-    # 4. 打包 src/ 源码，替换占位符后写入 zip
-    zip_name = f"{plugin_name}_v{version}.zip"
-    zip_path = os.path.join(DIST_DIR, zip_name)
+    # 7. 打包 src/ 源码，替换占位符后写入 zip
+    zip_name = f"{plugin_name}_v{version_prefix}{version}.zip"
+    zip_path = os.path.join(output_dir, zip_name)
 
     # templates/ 目录不替换占位符
     NO_REPLACE_PREFIX = os.path.join(SRC_DIR, "templates")
@@ -156,6 +196,10 @@ def pack(args):
                 src_path = os.path.join(root, file)
                 arc_name = os.path.relpath(src_path, SRC_DIR).replace("\\", "/")
 
+                # 特殊处理：重命名 {{#plugin_name#}}_main.py 为 {plugin_name}_main.py
+                if file == '{{#plugin_name#}}_main.py':
+                    arc_name = arc_name.replace('{{#plugin_name#}}_main.py', f'{plugin_name}_main.py')
+
                 # 判断是否需要替换占位符
                 if root.startswith(NO_REPLACE_PREFIX):
                     # templates/ 不替换，原样写入
@@ -169,12 +213,21 @@ def pack(args):
                         # 二进制文件原样写入
                         zf.write(src_path, arc_name)
                     else:
+                        # 特殊处理：替换类名中的 plugin_name
+                        if file == '{{#plugin_name#}}_main.py' or file.endswith('_main.py'):
+                            # 替换类定义中的 plugin_name 为实际的插件名
+                            content = re.sub(r'class\s+plugin_name_main:', f'class {plugin_name}_main:', content)
+                        
                         if has_placeholder(content):
                             content = replace_placeholders(content, variables)
                             zf.writestr(arc_name, content)
                         else:
-                            # 无占位符，原样写入（不经过字符串处理）
-                            zf.write(src_path, arc_name)
+                            # 无占位符，但有类名需要替换
+                            if 'plugin_name_main' in content and plugin_name != 'plugin_name':
+                                zf.writestr(arc_name, content)
+                            else:
+                                # 无占位符，原样写入（不经过字符串处理）
+                                zf.write(src_path, arc_name)
 
                 file_count += 1
                 print(f"  + {arc_name}")
@@ -190,7 +243,7 @@ def pack(args):
 
     print("-" * 40)
     print(f"[完成] 共打包 {file_count} 个文件")
-    print(f"[完成] 输出: dist/{zip_name} ({size_str})")
+    print(f"[完成] 输出: {os.path.relpath(zip_path, BASE_DIR)} ({size_str})")
 
 
 # ===== 路径配置 =====
@@ -201,4 +254,6 @@ DIST_DIR = os.path.join(BASE_DIR, "dist")
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="宝塔插件打包工具")
     parser.add_argument("--version", "-v", type=str, default=None, help="指定版本号（默认读取 package.json）")
+    parser.add_argument("--type", "-t", type=str, choices=['dev', 'beta', 'release'], default=None, 
+                       help="构建类型: dev(开发版), beta(测试版), release(正式版)，默认为 dev")
     pack(parser.parse_args())
