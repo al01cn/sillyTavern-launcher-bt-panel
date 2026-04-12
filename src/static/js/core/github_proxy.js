@@ -17,6 +17,7 @@ var GithubProxy = (function () {
     var DEFAULT_URL = 'https://ghfast.top/';
     var CACHE_KEY = 'GITHUB_PROXY_LATENCY';  // CacheUtil key（会自动加 STL_ 前缀）
     var CACHE_TTL = 3 * 24 * 60 * 60 * 1000;  // 缓存有效期 3 天
+    var LIST_CACHE_KEY = 'GITHUB_PROXY_LIST';  // 列表缓存 key
 
     /** 静态回退列表（API 不可用时兜底） */
     var FALLBACK_LIST = [
@@ -36,6 +37,7 @@ var GithubProxy = (function () {
     var _testing = false;    // 是否正在批量测试
     var _pollTimer = null;   // 轮询定时器
     var _polling = false;    // 请求锁：防止上一次轮询没回来就发下一次
+    var _listLoaded = false; // 标记列表是否已加载（避免重复请求）
 
     // ── 工具 ──────────────────────────────────────────
 
@@ -114,6 +116,40 @@ var GithubProxy = (function () {
     }
 
     /**
+     * 从 localStorage 读取列表缓存
+     * 返回 [{ url, location, tag }] 或 null（过期/不存在）
+     */
+    function _loadListCache() {
+        try {
+            var cached = CacheUtil.localGet(LIST_CACHE_KEY, null);
+            if (!cached || !cached.data || !cached.timestamp) return null;
+            // 检查是否过期（列表缓存也用同样的 TTL）
+            if (Date.now() - cached.timestamp > CACHE_TTL) {
+                CacheUtil.localRemove(LIST_CACHE_KEY);
+                return null;
+            }
+            return cached.data;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
+     * 写入列表缓存到 localStorage
+     * @param {Array} list - [{ url, location, tag }]
+     */
+    function _saveListCache(list) {
+        try {
+            CacheUtil.localSet(LIST_CACHE_KEY, {
+                data: list,
+                timestamp: Date.now()
+            });
+        } catch (e) {
+            // localStorage 写入失败（如隐私模式），忽略
+        }
+    }
+
+    /**
      * 写入延迟缓存到 CacheUtil
      * @param {Array} list - [{ url, latency }]
      */
@@ -188,29 +224,53 @@ var GithubProxy = (function () {
     // ── 获取加速列表 ──────────────────────────────────
 
     /**
-     * 获取加速地址列表（优先 API，失败回退静态列表）
+     * 获取加速地址列表（优先缓存，其次 API，失败回退静态列表）
      *
      * @param {function} callback - function(list)
      *   list: [{ url, location, latency, tag }]
      */
     function getProxyList(callback) {
-        if (_cache) {
+        // 如果已有缓存且已加载，直接返回
+        if (_cache && _listLoaded) {
             callback(_cache);
             return;
         }
 
+        // 尝试从持久化缓存加载列表
+        var cachedList = _loadListCache();
+        if (cachedList && cachedList.length > 0) {
+            // 合并缓存的延迟数据
+            _mergeLatencyFromCache(cachedList);
+            _cache = cachedList;
+            _listLoaded = true;
+            callback(cachedList);
+            return;
+        }
+
+        // 缓存未命中，从 API 获取
         _fetchFromAPI(function (apiList) {
             if (apiList && apiList.length > 0) {
                 // 合并缓存延迟数据
                 _mergeLatencyFromCache(apiList);
                 _cache = apiList;
+                _listLoaded = true;
+                // 保存到持久化缓存
+                _saveListCache(apiList.map(function(item) {
+                    return { url: item.url, location: item.location, tag: item.tag };
+                }));
                 callback(apiList);
                 return;
             }
 
+            // API 失败，使用静态回退列表
             _useFallback(function (fallbackList) {
                 _mergeLatencyFromCache(fallbackList);
                 _cache = fallbackList;
+                _listLoaded = true;
+                // 保存回退列表到缓存
+                _saveListCache(fallbackList.map(function(item) {
+                    return { url: item.url, location: item.location, tag: item.tag };
+                }));
                 callback(fallbackList);
             });
         });
@@ -326,6 +386,8 @@ var GithubProxy = (function () {
                 // 开始轮询日志
                 var pos = 0;
                 var doneCount = 0;
+                var lastPosChangeTime = Date.now(); // 记录上次 pos 变化的时间
+                var STALE_TIMEOUT = 30000; // 如果30秒内 pos 没变化，认为卡住了
 
                 var pollStartTime = Date.now();
                 var POLL_TIMEOUT = 90000; // 前端兜底超时 90s
@@ -341,7 +403,21 @@ var GithubProxy = (function () {
                         _pollTimer = null;
                         _testing = false;
                         _polling = false;
-                        _report(onProgress, '--- 测试超时，已强制结束 ---');
+                        _report(onProgress, '--- 测试超时（90s），已强制结束 ---');
+                        _saveLatencyCache(list);
+                        list.sort(function (a, b) { return a.latency - b.latency; });
+                        _cache = list;
+                        if (callback) callback(list);
+                        return;
+                    }
+
+                    // 检测是否卡住（pos 长时间不变）
+                    if (Date.now() - lastPosChangeTime > STALE_TIMEOUT && pos > 0) {
+                        clearInterval(_pollTimer);
+                        _pollTimer = null;
+                        _testing = false;
+                        _polling = false;
+                        _report(onProgress, '--- 测试无响应超过30秒，可能已卡住，强制结束 ---');
                         _saveLatencyCache(list);
                         list.sort(function (a, b) { return a.latency - b.latency; });
                         _cache = list;
@@ -354,7 +430,13 @@ var GithubProxy = (function () {
 
                         if (!logData) return;
 
+                        var oldPos = pos;
                         pos = logData.pos || pos;
+                        
+                        // 如果 pos 变化了，更新最后变化时间
+                        if (pos !== oldPos) {
+                            lastPosChangeTime = Date.now();
+                        }
 
                         // 有新日志行
                         if (logData.log) {
@@ -540,8 +622,14 @@ var GithubProxy = (function () {
         /** URL 规范化（统一尾部斜杠，用于缓存 key 和 DOM 匹配） */
         normalizeUrl: _normalizeUrl,
 
-        /** 清除列表缓存（强制下次重新从 API 获取） */
-        clearCache: function () { _cache = null; },
+        /**
+     * 清除列表缓存（强制下次重新从 API 获取）
+     */
+    clearCache: function () { 
+        _cache = null; 
+        _listLoaded = false;
+        CacheUtil.localRemove(LIST_CACHE_KEY);
+    },
 
         /** 清除延迟缓存（localStorage） */
         clearLatencyCache: function () { CacheUtil.localRemove(CACHE_KEY); },

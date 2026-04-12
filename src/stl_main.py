@@ -148,11 +148,39 @@ class stl_main:
         # 1. 获取插件版本（从配置文件或默认值）
         app_version = self.__get_config('plugin_version') or '1.0.0'
 
-        # 2. 获取 Node.js 版本
+        # 2. 获取 Node.js 版本（使用与 get_nodejs_version 相同的逻辑）
         node_version = ''
         try:
             result = public.ExecShell('node -v')
-            node_version = (result[0] or '').strip()
+            version = (result[0] or '').strip()
+            
+            if version:
+                # 获取 node 的完整路径
+                which_result = public.ExecShell('which node')
+                node_path = (which_result[0] or '').strip()
+                
+                # 如果是宝塔管理的 node，尝试获取系统全局版本
+                if '/www/server/nodejs/' in node_path:
+                    common_paths = [
+                        '/usr/local/bin/node',
+                        '/usr/bin/node',
+                        '/opt/homebrew/bin/node',
+                        '/home/linuxbrew/.linuxbrew/bin/node'
+                    ]
+                    
+                    for path in common_paths:
+                        if os.path.exists(path) and path != node_path:
+                            check_result = public.ExecShell('{} -v'.format(path))
+                            alt_version = (check_result[0] or '').strip()
+                            if alt_version:
+                                node_version = alt_version
+                                break
+                    
+                    # 如果没找到其他版本，使用当前版本
+                    if not node_version:
+                        node_version = version
+                else:
+                    node_version = version
         except Exception:
             pass
 
@@ -187,14 +215,87 @@ class stl_main:
         }
 
     def get_nodejs_version(self, args):
-
-        """获取系统当前默认的 Node.js 版本（执行 node -v）"""
+        """获取系统当前默认的 Node.js 版本
+        
+        优先执行 node -v 获取版本号，如果失败则尝试从宝塔 Node.js 插件获取。
+        """
         try:
+            import public
+            import os
+            
+            # 首先尝试执行 node -v 获取版本
             result = public.ExecShell('node -v')
             version = (result[0] or '').strip()
+            
+            # 如果获取到版本，还需要确认这是哪个 node
             if version:
-                return {'status': True, 'version': version}
-            # 检查 stderr，可能是 node 未安装
+                # 获取 node 的完整路径
+                which_result = public.ExecShell('which node')
+                node_path = (which_result[0] or '').strip()
+                
+                # 如果是宝塔管理的 node（路径包含 /www/server/nodejs/），
+                # 尝试获取系统全局的 node 版本作为备选
+                if '/www/server/nodejs/' in node_path:
+                    # 尝试查找系统其他位置的 node
+                    common_paths = [
+                        '/usr/local/bin/node',
+                        '/usr/bin/node',
+                        '/opt/homebrew/bin/node',
+                        '/home/linuxbrew/.linuxbrew/bin/node'
+                    ]
+                    
+                    for path in common_paths:
+                        if os.path.exists(path) and path != node_path:
+                            check_result = public.ExecShell('{} -v'.format(path))
+                            alt_version = (check_result[0] or '').strip()
+                            if alt_version:
+                                # 返回系统全局的版本（非宝塔管理的版本）
+                                return {'status': True, 'version': alt_version, 'path': path}
+                
+                # 如果没有找到其他版本，返回当前检测到的版本
+                return {'status': True, 'version': version, 'path': node_path}
+            
+            # 如果 node -v 失败，尝试从宝塔 Node.js 插件获取
+            # 检查 Node.js 插件是否已安装
+            soft_list = public.get_soft_list({
+                'type': 0,
+                'query': '管理node.js版本',
+                'p': 1,
+                'row': 15,
+                'force': 0
+            })
+            
+            nodejs_plugin = None
+            if soft_list and 'list' in soft_list and 'data' in soft_list['list']:
+                for plugin_info in soft_list['list']['data']:
+                    if plugin_info.get('name') == 'nodejs':
+                        nodejs_plugin = plugin_info
+                        break
+            
+            # 如果 Node.js 插件已安装且状态正常
+            if nodejs_plugin and nodejs_plugin.get('setup') and nodejs_plugin.get('status'):
+                try:
+                    # 调用 Node.js 插件的接口获取版本列表
+                    import json
+                    import urllib.request
+                    
+                    # 通过面板内部接口调用 Node.js 插件
+                    panel_url = 'http://127.0.0.1:' + str(public.get_panel_port()) + '/plugin?action=a&s=get_online_version_list&name=nodejs'
+                    req = urllib.request.Request(panel_url, data=b'show_type=1&force=1')
+                    req.add_header('Cookie', public.get_cookie())
+                    
+                    response = urllib.request.urlopen(req, timeout=10)
+                    version_data = json.loads(response.read().decode('utf-8'))
+                    
+                    if isinstance(version_data, list):
+                        # 查找已安装且设为默认的版本
+                        for version_info in version_data:
+                            if version_info.get('setup') == 1 and version_info.get('default') == 1:
+                                return {'status': True, 'version': version_info.get('version', '')}
+                except Exception:
+                    pass
+            
+            # 都失败了，返回错误信息
             err = (result[1] or '').strip()
             msg = err if err else '未检测到 Node.js'
             return {'status': False, 'msg': msg, 'version': ''}
@@ -2788,6 +2889,7 @@ class stl_main:
 
         def _do_tcping():
             import time
+            import traceback
             start_time = time.time()
             overall_timeout = 60  # 整体超时秒数
             try:
@@ -2830,9 +2932,18 @@ class stl_main:
 
                     with open(log_file, 'a') as f:
                         f.write(line + '\n')
+            except Exception as e:
+                # 捕获所有异常，记录错误信息
+                with open(log_file, 'a') as f:
+                    f.write('--- TCPing 线程异常: {} ---\n'.format(str(e)))
+                    f.write(traceback.format_exc() + '\n')
             finally:
-                if os.path.exists(lock_file):
-                    os.remove(lock_file)
+                # 无论如何都要删除锁文件
+                try:
+                    if os.path.exists(lock_file):
+                        os.remove(lock_file)
+                except:
+                    pass
 
         t = threading.Thread(target=_do_tcping)
         t.daemon = True

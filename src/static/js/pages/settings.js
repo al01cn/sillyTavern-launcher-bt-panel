@@ -190,7 +190,16 @@ function stl_openTcpingDialog(title) {
         area: ['680px', '520px'],
         content: dialogHtml,
         shadeClose: false,
-        closeBtn: 1
+        closeBtn: 1,
+        btn: ['停止测试'],
+        yes: function(index) {
+            // 点击停止测试按钮
+            GithubProxy.stopTest();
+            stl_appendTcpingLog('\n--- 用户手动停止测试 ---');
+            setTimeout(function() {
+                layer.close(index);
+            }, 500);
+        }
     });
 }
 
@@ -455,8 +464,7 @@ function stl_updateProxyLatency(url, latency) {
  * 测试全部节点延迟（弹窗模式）
  */
 function stl_testAllProxies() {
-    GithubProxy.clearCache();
-
+    // 不再清除缓存，直接使用当前列表进行测速
     var dialogIndex = stl_openTcpingDialog('TCPing 测速');
 
     GithubProxy.getProxyList(function (list) {
@@ -498,8 +506,7 @@ function stl_autoBestProxy() {
     }, function (index) {
         layer.close(index);
 
-        GithubProxy.clearCache();
-
+        // 不再清除缓存，直接使用当前列表进行测速
         var dialogIndex = stl_openTcpingDialog('一键选择最佳节点');
 
         GithubProxy.autoSelectBest(
